@@ -26,6 +26,10 @@ header{position:sticky;top:0;z-index:5;padding-top:env(safe-area-inset-top,0px);
 .hd a.txt:hover,.hd button:hover{color:var(--w)}
 .hd .cartb{color:var(--w);border:1px solid var(--hair);border-radius:999px;padding:8px 16px}
 .hd .cartb:hover{background:var(--w);color:var(--b)}
+.intro{padding:44px 0 0}
+.intro h1{font-weight:900;font-size:clamp(36px,6vw,60px);letter-spacing:-.04em;line-height:.9;margin:0 0 12px}
+.intro p{margin:0;color:var(--g);font-size:12px;opacity:.8}
+.intro a{color:var(--g);text-underline-offset:2px;transition:color .15s}.intro a:hover{color:var(--w)}
 section{padding:36px 0 16px}
 .head{margin-bottom:16px}
 h2{font-weight:900;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;line-height:.9;margin:0}
@@ -33,7 +37,7 @@ h2{font-weight:900;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;line-he
 .fbox::-webkit-scrollbar,.list::-webkit-scrollbar{width:8px}
 .fbox::-webkit-scrollbar-track,.list::-webkit-scrollbar-track{background:#161616;border-radius:8px}
 .fbox::-webkit-scrollbar-thumb,.list::-webkit-scrollbar-thumb{background:#7a7a7a;border-radius:8px}
-.fbox{max-height:calc(74px*5 + 2px)}.list{max-height:calc(74px*5.5 + 2px)}
+.fbox,.list{max-height:calc(74px*5 + 2px)}
 .fbox .row:last-child,.list .row:last-child{border-bottom:0}
 .row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 200px minmax(0,1fr);gap:16px;align-items:center;padding:14px 8px;border-bottom:1px solid var(--hair);border-radius:10px;cursor:pointer}
 .row>*{position:relative}
@@ -172,7 +176,8 @@ footer{margin-top:56px;border-top:1px solid var(--hair);padding:40px 0 calc(72px
 </div></header>
 
 <main id="top"><div class="wrap">
-  <section><div class="head"><h2>featured</h2></div><div class="fbox" id="feat"></div></section>
+  <div class="intro"><h1>shop beats</h1><p>for all custom inquiries, please message me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
+  <section id="featSec"><div class="head"><h2>featured</h2></div><div class="fbox" id="feat"></div></section>
   <section><div class="head"><h2>all beats</h2></div><div class="list" id="list"></div></section>
 </div></main>
 
@@ -397,6 +402,8 @@ function mk(b){
 }
 BEATS.filter(b=>b.featured).forEach(b=>$("feat").appendChild(mk(b)));
 BEATS.forEach(b=>$("list").appendChild(mk(b)));
+$("featSec").hidden=!BEATS.some(b=>b.featured);
+if(!BEATS.length)$("list").innerHTML='<p class="empty" style="padding:24px 8px">new beats coming soon.</p>';
 refreshAdd();renderCart();
 document.addEventListener("pointermove",e=>{
   const r=e.target.closest&&e.target.closest(".row");if(!r)return;
