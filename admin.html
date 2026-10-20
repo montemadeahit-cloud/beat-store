@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>admin – montemadethis</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;900&display=swap" rel="stylesheet">
+<style>
+:root{--g:#8f8f8f;--hair:rgba(255,255,255,.16);box-sizing:border-box}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:#000;color:#fff;font:400 16px/1.5 Archivo,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.w{max-width:760px;margin:0 auto;padding:24px 20px 80px}
+h1{font-weight:900;font-size:32px;letter-spacing:-.035em;margin:0}
+h2{font-weight:900;font-size:20px;letter-spacing:-.02em;margin:0 0 14px}
+a{color:#fff}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:28px;flex-wrap:wrap}
+.top div{display:flex;gap:16px;align-items:center}
+button,input{font:inherit;color:inherit}
+.lnk{background:none;border:0;color:var(--g);cursor:pointer;padding:0;text-decoration:none}
+.lnk:hover{color:#fff}
+.box{border:1px solid var(--hair);border-radius:14px;padding:18px;margin-bottom:16px}
+.in{width:100%;background:transparent;border:1px solid var(--hair);border-radius:10px;padding:11px 13px}
+.row3{display:grid;grid-template-columns:1fr 90px 90px;gap:8px;margin-bottom:10px}
+.lab{display:block;color:var(--g);font-size:14px;margin:10px 0 4px}
+.btn{display:inline-block;background:#fff;color:#000;font-weight:900;border:0;border-radius:999px;padding:11px 22px;cursor:pointer}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.ghost{background:none;color:#fff;border:1px solid var(--hair);font-weight:500;padding:8px 16px}
+.btn.ghost:hover{background:#fff;color:#000}
+.danger{color:#ff6b6b}
+.chk{display:inline-flex;gap:8px;align-items:center;cursor:pointer;margin:6px 0}
+.file{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--hair);font-size:15px;flex-wrap:wrap}
+.ok{color:#7be39b}.miss{color:#ffb86b}
+.bar{height:4px;background:#222;border-radius:4px;overflow:hidden;margin:10px 0 0;display:none}
+.bar i{display:block;height:100%;width:0;background:#fff;transition:width .15s}
+.st{color:var(--g);font-size:14px}
+.acts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.warn{border:1px solid #ffb86b;color:#ffb86b;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:15px}
+.name{font-weight:500;font-size:18px}
+.badge{font-size:13px;border:1px solid var(--hair);border-radius:999px;padding:2px 10px;color:var(--g);margin-left:8px;white-space:nowrap}
+.badge.live{color:#7be39b;border-color:#2b5a3a}
+.empty{color:var(--g)}
+[hidden]{display:none!important}
+input[type=file]{color:var(--g);font-size:14px;max-width:100%}
+</style>
+</head>
+<body><div class="w">
+
+<div id="login" hidden>
+  <h1>admin</h1><p class="empty">montemadethis</p>
+  <div class="box">
+    <input class="in" id="pw" type="password" placeholder="password" autocomplete="current-password">
+    <p class="st" id="loginErr" style="color:#ff6b6b;margin:8px 0 0"></p>
+    <p style="margin:12px 0 0"><button class="btn" id="loginBtn">log in</button></p>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="logout">log out</button></div></div>
+  <div class="warn" id="vol" hidden><b>storage isn't attached yet.</b> anything you upload will disappear the next time the site redeploys. add a Volume in Railway first (see steps), then come back.</div>
+
+  <div class="box">
+    <h2>add a beat</h2>
+    <div class="row3"><input class="in" id="nName" placeholder="beat name"><input class="in" id="nBpm" type="number" placeholder="bpm"><input class="in" id="nPrice" type="number" placeholder="$ price"></div>
+    <label class="chk"><input type="checkbox" id="nFeat"> featured</label>
+    <label class="lab">preview mp3 (short, tagged version people hear)</label><input type="file" id="nPrev" accept=".mp3,audio/mpeg">
+    <label class="lab">full mp3 (what the customer gets after paying)</label><input type="file" id="nFull" accept=".mp3,audio/mpeg">
+    <div class="bar" id="nBar"><i></i></div>
+    <div class="acts"><button class="btn" id="nAdd">add beat</button><span class="st" id="nSt"></span></div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function showLogin(msg){$("#app").hidden=true;$("#login").hidden=false;$("#loginErr").textContent=msg||"";}
+async function api(method,url,body){
+  const r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
+  if(r.status===401&&!url.includes("login")){showLogin();throw new Error("please log in")}
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||"something went wrong");
+  return j;
+}
+function upload(slug,kind,file,onp){
+  return new Promise((res,rej)=>{
+    const x=new XMLHttpRequest();x.open("PUT",`/api/admin/beats/${slug}/${kind}`);
+    x.upload.onprogress=e=>e.lengthComputable&&onp(e.loaded/e.total);
+    x.onload=()=>{let j={};try{j=JSON.parse(x.responseText)}catch(e){}
+      if(x.status===401){showLogin();return rej(new Error("please log in"))}
+      x.status<300?res(j):rej(new Error(j.error||"upload failed"))};
+    x.onerror=()=>rej(new Error("network error, try again"));
+    x.send(file);
+  });
+}
+const fileOk=f=>f&&/\.mp3$/i.test(f.name);
+
+async function boot(){
+  const me=await (await fetch("/api/admin/me")).json();
+  if(!me.configured)return showLogin("ADMIN_PASSWORD isn't set in Railway yet.");
+  if(!me.authed)return showLogin();
+  $("#login").hidden=true;$("#app").hidden=false;$("#vol").hidden=me.persistent;
+  load();
+}
+async function load(){
+  const beats=await api("GET","/api/admin/beats"),box=$("#list");
+  if(!beats.length){box.innerHTML='<p class="empty">no beats yet. add your first one above.</p>';return}
+  box.innerHTML=beats.map(b=>`
+  <div class="box" data-slug="${esc(b.slug)}">
+    <div style="margin-bottom:12px"><span class="name">${esc(b.name)}</span><span class="badge ${b.hasFull?"live":""}">${b.hasFull?"live":"hidden: needs full mp3"}</span></div>
+    <div class="row3"><input class="in" data-k="name" value="${esc(b.name)}" aria-label="name"><input class="in" data-k="bpm" type="number" value="${b.bpm}" aria-label="bpm"><input class="in" data-k="price" type="number" value="${b.price}" aria-label="price"></div>
+    <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>
+    <div class="file"><span>preview: ${b.hasPreview?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="preview" accept=".mp3,audio/mpeg"></div>
+    <div class="file"><span>full mp3: ${b.hasFull?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="full" accept=".mp3,audio/mpeg"></div>
+    <div class="bar"><i></i></div>
+    <div class="acts"><button class="btn ghost" data-act="save">save changes</button>${b.hasFull?`<a class="lnk" href="/beat/${esc(b.slug)}" target="_blank">view page</a>`:""}<button class="lnk danger" data-act="del">delete</button><span class="st"></span></div>
+  </div>`).join("");
+}
+$("#list").addEventListener("click",async e=>{
+  const act=e.target.dataset.act,card=e.target.closest("[data-slug]");if(!act||!card)return;
+  const slug=card.dataset.slug,st=card.querySelector(".st");
+  try{
+    if(act==="save"){
+      const g=k=>card.querySelector(`[data-k=${k}]`);
+      await api("PATCH","/api/admin/beats/"+slug,{name:g("name").value,bpm:g("bpm").value,price:g("price").value,featured:g("featured").checked});
+      st.textContent="saved";setTimeout(load,600);
+    }
+    if(act==="del"){
+      if(!confirm("delete this beat and its files? this can't be undone."))return;
+      await api("DELETE","/api/admin/beats/"+slug);load();
+    }
+  }catch(err){st.textContent=err.message;st.style.color="#ff6b6b"}
+});
+$("#list").addEventListener("change",async e=>{
+  const kind=e.target.dataset.up,card=e.target.closest("[data-slug]");if(!kind||!card)return;
+  const f=e.target.files[0],st=card.querySelector(".st"),bar=card.querySelector(".bar");if(!f)return;
+  if(!fileOk(f)){st.textContent="please choose an .mp3 file";st.style.color="#ff6b6b";return}
+  bar.style.display="block";st.style.color="";
+  try{await upload(card.dataset.slug,kind,f,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});load()}
+  catch(err){st.textContent=err.message;st.style.color="#ff6b6b"}
+});
+
+$("#nAdd").onclick=async()=>{
+  const st=$("#nSt"),bar=$("#nBar"),btn=$("#nAdd"),pv=$("#nPrev").files[0],fl=$("#nFull").files[0];
+  st.style.color="#ff6b6b";
+  if(!$("#nName").value.trim())return st.textContent="enter a beat name";
+  if(!$("#nBpm").value)return st.textContent="enter the bpm";
+  if(!$("#nPrice").value)return st.textContent="enter a price";
+  if(!fileOk(pv))return st.textContent="choose the preview .mp3";
+  if(!fileOk(fl))return st.textContent="choose the full .mp3";
+  btn.disabled=true;st.style.color="";bar.style.display="block";
+  let slug=null;
+  try{
+    const b=await api("POST","/api/admin/beats",{name:$("#nName").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
+    slug=b.slug;
+    const prog=(label,off)=>p=>{const t=off+p*50;bar.firstElementChild.style.width=t+"%";st.textContent=label+" "+Math.round(p*100)+"%"};
+    await upload(slug,"preview",pv,prog("uploading preview",0));
+    await upload(slug,"full",fl,prog("uploading full mp3",50));
+    st.textContent="added! it's live.";
+    ["#nName","#nBpm","#nPrice","#nPrev","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
+    bar.style.display="none";bar.firstElementChild.style.width="0";
+    load();
+  }catch(err){st.style.color="#ff6b6b";st.textContent=(slug?"beat was created but upload failed: ":"")+err.message+(slug?". find it below and re-upload the files.":"");if(slug)load()}
+  btn.disabled=false;
+};
+$("#loginBtn").onclick=async()=>{
+  try{await api("POST","/api/admin/login",{password:$("#pw").value});$("#pw").value="";boot()}
+  catch(err){$("#loginErr").textContent=err.message}
+};
+$("#pw").onkeydown=e=>{if(e.key==="Enter")$("#loginBtn").click()};
+$("#logout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST"});showLogin()};
+boot();
+</script>
+</body></html>
