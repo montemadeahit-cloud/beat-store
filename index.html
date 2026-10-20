@@ -283,7 +283,7 @@ function pause(){if(audio)audio.pause();setPlaying(false)}
 function play(){if(audio)audio.play().catch(()=>setPlaying(false));setPlaying(true)}
 function load(b){
   pause();audio=null;cur=b;t=0;level=0;
-  if(b.src){audio=new Audio(b.src);audio.onended=()=>setPlaying(false);audio.onloadedmetadata=kick}
+  if(b.src){audio=new Audio(b.src);audio.onended=()=>setPlaying(false);audio.onloadedmetadata=()=>{if(b._seek!=null){audio.currentTime=b._seek*audio.duration;b._seek=null}kick()}}else if(b._seek!=null){t=b._seek*dur;b._seek=null}
   $("pn").textContent=b.name;$("pm").textContent=b.bpm+" bpm";
   $("pl").classList.add("open");document.body.classList.add("pad");
   sizeWf();refreshAdd();analyze(b);play();
@@ -302,7 +302,12 @@ async function decode(buf,n){
 async function analyze(b){
   const dat=DATA.get(b)||{};DATA.set(b,dat);
   if(!b.src||dat.env||dat.busy)return;dat.busy=true;
-  try{const r=await decode(await (await fetch(b.src)).arrayBuffer(),120);dat.peaks=r.peaks;dat.env=r.env;kick()}catch(e){dat.busy=false}
+  try{const r=await decode(await (await fetch(b.src)).arrayBuffer(),120);dat.peaks=r.peaks;dat.env=r.env;if(!(b.peaks&&b.peaks.length))b.peaks=r.peaks;els.forEach(([el,x])=>{if(x===b)el.querySelectorAll(".wv .b").forEach(n=>{n.innerHTML=wave(b)})});kick()}catch(e){console.error(e);dat.busy=false}
+}
+function seekRow(b,f){
+  if(b!==cur){b._seek=f;load(b);return}
+  const p=f*dd();if(audio)audio.currentTime=p;else t=p;
+  if(!playing)play();kick();
 }
 function seekTo(e){const r=wf.getBoundingClientRect(),f=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),p=f*dd();if(audio)audio.currentTime=p;else t=p;kick()}
 wf.onpointerdown=e=>{wf.setPointerCapture(e.pointerId);seeking=true;seekTo(e)};
@@ -397,6 +402,7 @@ function mk(b){
     <div class="rr"><span class="s bpm">${b.bpm} bpm</span><span class="price">$${b.price}</span><button class="add" data-n="${esc(b.slug)}"></button><button class="more" aria-label="more options for ${esc(b.name)}" aria-haspopup="menu">${DOTS}</button></div>`;
   el.onclick=e=>{if(e.target.closest(".add,.more"))return;b===cur?(playing?pause():play()):load(b)};
   el.querySelector(".add").onclick=()=>toggleCart(b);
+  el.querySelector(".wv").onclick=e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();seekRow(b,Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)))};
   el.querySelector(".more").onclick=e=>{e.stopPropagation();openMenu(e.currentTarget,b)};
   els.push([el,b]);return el;
 }
