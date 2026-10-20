@@ -63,8 +63,7 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
     <h2>add a beat</h2>
     <div class="row3"><input class="in" id="nName" placeholder="beat name"><input class="in" id="nBpm" type="number" placeholder="bpm"><input class="in" id="nPrice" type="number" placeholder="$ price"></div>
     <label class="chk"><input type="checkbox" id="nFeat"> featured</label>
-    <label class="lab">preview mp3 (short, tagged version people hear)</label><input type="file" id="nPrev" accept=".mp3,audio/mpeg">
-    <label class="lab">full mp3 (what the customer gets after paying)</label><input type="file" id="nFull" accept=".mp3,audio/mpeg">
+    <label class="lab">mp3 file (people can listen on the site, and buyers get it after paying)</label><input type="file" id="nFull" accept=".mp3,audio/mpeg">
     <div class="bar" id="nBar"><i></i></div>
     <div class="acts"><button class="btn" id="nAdd">add beat</button><span class="st" id="nSt"></span></div>
   </div>
@@ -109,11 +108,10 @@ async function load(){
   if(!beats.length){box.innerHTML='<p class="empty">no beats yet. add your first one above.</p>';return}
   box.innerHTML=beats.map(b=>`
   <div class="box" data-slug="${esc(b.slug)}">
-    <div style="margin-bottom:12px"><span class="name">${esc(b.name)}</span><span class="badge ${b.hasFull?"live":""}">${b.hasFull?"live":"hidden: needs full mp3"}</span></div>
+    <div style="margin-bottom:12px"><span class="name">${esc(b.name)}</span><span class="badge ${b.hasFull?"live":""}">${b.hasFull?"live":"hidden: needs mp3"}</span></div>
     <div class="row3"><input class="in" data-k="name" value="${esc(b.name)}" aria-label="name"><input class="in" data-k="bpm" type="number" value="${b.bpm}" aria-label="bpm"><input class="in" data-k="price" type="number" value="${b.price}" aria-label="price"></div>
     <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>
-    <div class="file"><span>preview: ${b.hasPreview?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="preview" accept=".mp3,audio/mpeg"></div>
-    <div class="file"><span>full mp3: ${b.hasFull?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="full" accept=".mp3,audio/mpeg"></div>
+    <div class="file"><span>mp3: ${b.hasFull?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="full" accept=".mp3,audio/mpeg"></div>
     <div class="bar"><i></i></div>
     <div class="acts"><button class="btn ghost" data-act="save">save changes</button>${b.hasFull?`<a class="lnk" href="/beat/${esc(b.slug)}" target="_blank">view page</a>`:""}<button class="lnk danger" data-act="del">delete</button><span class="st"></span></div>
   </div>`).join("");
@@ -143,23 +141,20 @@ $("#list").addEventListener("change",async e=>{
 });
 
 $("#nAdd").onclick=async()=>{
-  const st=$("#nSt"),bar=$("#nBar"),btn=$("#nAdd"),pv=$("#nPrev").files[0],fl=$("#nFull").files[0];
+  const st=$("#nSt"),bar=$("#nBar"),btn=$("#nAdd"),fl=$("#nFull").files[0];
   st.style.color="#ff6b6b";
   if(!$("#nName").value.trim())return st.textContent="enter a beat name";
   if(!$("#nBpm").value)return st.textContent="enter the bpm";
   if(!$("#nPrice").value)return st.textContent="enter a price";
-  if(!fileOk(pv))return st.textContent="choose the preview .mp3";
-  if(!fileOk(fl))return st.textContent="choose the full .mp3";
+  if(!fileOk(fl))return st.textContent="choose the .mp3 file";
   btn.disabled=true;st.style.color="";bar.style.display="block";
   let slug=null;
   try{
     const b=await api("POST","/api/admin/beats",{name:$("#nName").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
     slug=b.slug;
-    const prog=(label,off)=>p=>{const t=off+p*50;bar.firstElementChild.style.width=t+"%";st.textContent=label+" "+Math.round(p*100)+"%"};
-    await upload(slug,"preview",pv,prog("uploading preview",0));
-    await upload(slug,"full",fl,prog("uploading full mp3",50));
+    await upload(slug,"full",fl,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});
     st.textContent="added! it's live.";
-    ["#nName","#nBpm","#nPrice","#nPrev","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
+    ["#nName","#nBpm","#nPrice","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
     bar.style.display="none";bar.firstElementChild.style.width="0";
     load();
   }catch(err){st.style.color="#ff6b6b";st.textContent=(slug?"beat was created but upload failed: ":"")+err.message+(slug?". find it below and re-upload the files.":"");if(slug)load()}
