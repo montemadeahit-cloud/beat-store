@@ -95,6 +95,20 @@ function upload(slug,kind,file,onp){
   });
 }
 const fileOk=f=>f&&/\.mp3$/i.test(f.name);
+async function peaksOf(buf){
+  const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
+  const ch=ab.getChannelData(0),n=48,per=Math.floor(ch.length/n),pk=[];
+  for(let i=0;i<n;i++){let m=0;const st=Math.max(1,per>>8);for(let j=i*per;j<(i+1)*per;j+=st){const v=Math.abs(ch[j]);if(v>m)m=v}pk.push(m)}
+  const mx=Math.max(...pk)||1;return pk.map(v=>Math.round(Math.min(1,Math.max(.08,Math.pow(v/mx,.75)))*100)/100);
+}
+async function savePeaks(slug,file){try{await api("PATCH","/api/admin/beats/"+slug,{peaks:await peaksOf(await file.arrayBuffer())})}catch(e){console.error("waveform",e)}}
+let filling=false;
+async function backfill(beats){ // beats uploaded before waveforms existed get one automatically
+  if(filling)return;filling=true;
+  for(const b of beats){if(b.hasFull&&!(b.peaks&&b.peaks.length)){
+    try{const r=await fetch("/audio/"+b.slug+".mp3");await api("PATCH","/api/admin/beats/"+b.slug,{peaks:await peaksOf(await r.arrayBuffer())})}catch(e){console.error("waveform",e)}}}
+  filling=false;
+}
 
 async function boot(){
   const me=await (await fetch("/api/admin/me")).json();
@@ -115,6 +129,7 @@ async function load(){
     <div class="bar"><i></i></div>
     <div class="acts"><button class="btn ghost" data-act="save">save changes</button>${b.hasFull?`<a class="lnk" href="/beat/${esc(b.slug)}" target="_blank">view page</a>`:""}<button class="lnk danger" data-act="del">delete</button><span class="st"></span></div>
   </div>`).join("");
+  backfill(beats);
 }
 $("#list").addEventListener("click",async e=>{
   const act=e.target.dataset.act,card=e.target.closest("[data-slug]");if(!act||!card)return;
@@ -136,7 +151,7 @@ $("#list").addEventListener("change",async e=>{
   const f=e.target.files[0],st=card.querySelector(".st"),bar=card.querySelector(".bar");if(!f)return;
   if(!fileOk(f)){st.textContent="please choose an .mp3 file";st.style.color="#ff6b6b";return}
   bar.style.display="block";st.style.color="";
-  try{await upload(card.dataset.slug,kind,f,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});load()}
+  try{await upload(card.dataset.slug,kind,f,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});st.textContent="building waveform…";await savePeaks(card.dataset.slug,f);load()}
   catch(err){st.textContent=err.message;st.style.color="#ff6b6b"}
 });
 
@@ -153,6 +168,7 @@ $("#nAdd").onclick=async()=>{
     const b=await api("POST","/api/admin/beats",{name:$("#nName").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
     slug=b.slug;
     await upload(slug,"full",fl,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});
+    st.textContent="building waveform…";await savePeaks(slug,fl);
     st.textContent="added! it's live.";
     ["#nName","#nBpm","#nPrice","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
     bar.style.display="none";bar.firstElementChild.style.width="0";
