@@ -42,6 +42,7 @@ const allBeats = () => DB.map(decorate);
 const liveBeats = () => allBeats().filter(b => b.hasFull); // visible + sellable only when the full mp3 exists
 const publicBeat = b => ({
   slug: b.slug, name: b.name, bpm: b.bpm, price: b.price, featured: !!b.featured,
+  peaks: Array.isArray(b.peaks) ? b.peaks : [],
   src: b.hasFull ? `/audio/${b.slug}.mp3?v=${Math.round(fs.statSync(fullPath(b.slug)).mtimeMs)}` : "",
 });
 
@@ -195,6 +196,10 @@ function cleanFields(body, partial) {
     out.price = price;
   }
   if (!partial || body.featured !== undefined) out.featured = !!body.featured;
+  if (body.peaks !== undefined) {
+    if (!Array.isArray(body.peaks) || body.peaks.length !== 48 || !body.peaks.every(v => typeof v === "number" && v >= 0 && v <= 1)) throw new Error("bad waveform data");
+    out.peaks = body.peaks.map(v => Math.round(v * 100) / 100);
+  }
   return out;
 }
 
@@ -243,6 +248,7 @@ app.put("/api/admin/beats/:slug/:kind", requireAdmin, (req, res) => {
     const isMp3 = head.length >= 3 && (head.subarray(0, 3).toString() === "ID3" || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0));
     if (!isMp3) return fail(400, "that doesn't look like an mp3 file");
     fs.renameSync(tmp, dest);
+    const entry = DB.find(x => x.slug === slug); if (entry) { delete entry.peaks; saveDB(); } // new audio = old waveform is stale
     res.json({ ok: true, beat: getBeat(slug) });
   });
   req.pipe(out);
