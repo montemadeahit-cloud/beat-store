@@ -20,10 +20,8 @@ const BASE_URL = (process.env.BASE_URL ||
 /* ---------- storage: beats + audio live in DATA_DIR (a Railway Volume keeps them forever) ---------- */
 const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(ROOT, "data");
 const PERSISTENT = !process.env.RAILWAY_ENVIRONMENT || !!(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
-const PREVIEW_DIR = path.join(DATA_DIR, "previews"); // public previews
-const FULL_DIR = path.join(DATA_DIR, "full");        // private full mp3s (never served directly)
+const FULL_DIR = path.join(DATA_DIR, "full");        // the mp3s
 const CATALOG = path.join(DATA_DIR, "beats.json");
-fs.mkdirSync(PREVIEW_DIR, { recursive: true });
 fs.mkdirSync(FULL_DIR, { recursive: true });
 if (!PERSISTENT) console.warn("[warn] no Railway Volume attached: uploads will be lost on redeploy");
 
@@ -37,15 +35,14 @@ const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(
 let DB = [];
 try { DB = JSON.parse(fs.readFileSync(CATALOG, "utf8")); } catch { DB = []; }
 const saveDB = () => { fs.writeFileSync(CATALOG + ".tmp", JSON.stringify(DB, null, 2)); fs.renameSync(CATALOG + ".tmp", CATALOG); };
-const previewPath = slug => path.join(PREVIEW_DIR, slug + ".mp3");
 const fullPath = slug => path.join(FULL_DIR, slug + ".mp3");
-const decorate = b => ({ ...b, hasPreview: fs.existsSync(previewPath(b.slug)), hasFull: fs.existsSync(fullPath(b.slug)) });
+const decorate = b => ({ ...b, hasFull: fs.existsSync(fullPath(b.slug)) });
 const getBeat = slug => { const b = DB.find(x => x.slug === slug); return b && decorate(b); };
 const allBeats = () => DB.map(decorate);
 const liveBeats = () => allBeats().filter(b => b.hasFull); // visible + sellable only when the full mp3 exists
 const publicBeat = b => ({
   slug: b.slug, name: b.name, bpm: b.bpm, price: b.price, featured: !!b.featured,
-  src: b.hasPreview ? `/previews/${b.slug}.mp3?v=${Math.round(fs.statSync(previewPath(b.slug)).mtimeMs)}` : "",
+  src: b.hasFull ? `/audio/${b.slug}.mp3?v=${Math.round(fs.statSync(fullPath(b.slug)).mtimeMs)}` : "",
 });
 
 /* ---------- page rendering (adds per-beat share preview tags) ---------- */
@@ -223,7 +220,7 @@ app.delete("/api/admin/beats/:slug", requireAdmin, (req, res) => {
   const i = DB.findIndex(x => x.slug === req.params.slug);
   if (i < 0) return res.status(404).json({ error: "beat not found" });
   const [b] = DB.splice(i, 1); saveDB();
-  for (const p of [previewPath(b.slug), fullPath(b.slug)]) fs.rm(p, { force: true }, () => {});
+  for (const p of [fullPath(b.slug)]) fs.rm(p, { force: true }, () => {});
   res.json({ ok: true });
 });
 
@@ -232,9 +229,9 @@ const MAX_BYTES = 300 * 1024 * 1024;
 app.put("/api/admin/beats/:slug/:kind", requireAdmin, (req, res) => {
   const { slug, kind } = req.params;
   if (!DB.some(b => b.slug === slug)) return res.status(404).json({ error: "beat not found" });
-  if (kind !== "preview" && kind !== "full") return res.status(400).json({ error: "bad file type" });
+  if (kind !== "full") return res.status(400).json({ error: "bad file type" });
   if (Number(req.headers["content-length"] || 0) > MAX_BYTES) return res.status(413).json({ error: "file is over 300MB" });
-  const dest = kind === "full" ? fullPath(slug) : previewPath(slug), tmp = dest + ".tmp";
+  const dest = fullPath(slug), tmp = dest + ".tmp";
   const out = fs.createWriteStream(tmp);
   let n = 0, head = Buffer.alloc(0), dead = false;
   const fail = (code, msg) => { if (dead) return; dead = true; req.unpipe(out); out.destroy(); fs.rm(tmp, { force: true }, () => {}); res.status(code).set("Connection", "close").json({ error: msg }); req.resume(); };
@@ -294,7 +291,12 @@ app.get("/download/:slug", (req, res) => {
 });
 
 /* ---------- pages + preview audio ---------- */
-app.use("/previews", express.static(PREVIEW_DIR));
+/* the player streams the mp3 from here (supports seeking) */
+app.get("/audio/:file", (req, res) => {
+  const b = getBeat(req.params.file.replace(/\.mp3$/, ""));
+  if (!b || !b.hasFull) return res.sendStatus(404);
+  res.sendFile(fullPath(b.slug), { headers: { "Cache-Control": "public, max-age=3600" } });
+});
 app.get("/", (_req, res) => res.set("Cache-Control", "no-cache").type("html").send(render(null)));
 app.get("/beat/:slug", (req, res) => {
   const b = getBeat(req.params.slug);
