@@ -1,0 +1,22 @@
+[
+  {"name": "midnight run", "bpm": 140, "price": 30, "featured": true},
+  {"name": "static", "bpm": 128, "price": 30, "featured": true},
+  {"name": "lowlight", "bpm": 92, "price": 30, "featured": true},
+  {"name": "concrete", "bpm": 144, "price": 30, "featured": true},
+  {"name": "afterglow", "bpm": 110, "price": 30, "featured": true},
+  {"name": "paper moon", "bpm": 78, "price": 25, "featured": false},
+  {"name": "overpass", "bpm": 150, "price": 25, "featured": false},
+  {"name": "slow burn", "bpm": 84, "price": 25, "featured": false},
+  {"name": "pressure", "bpm": 136, "price": 25, "featured": false},
+  {"name": "north side", "bpm": 142, "price": 25, "featured": false},
+  {"name": "glass", "bpm": 96, "price": 25, "featured": false},
+  {"name": "tunnel vision", "bpm": 130, "price": 25, "featured": false},
+  {"name": "low tide", "bpm": 72, "price": 25, "featured": false},
+  {"name": "red line", "bpm": 148, "price": 25, "featured": false},
+  {"name": "sundown", "bpm": 88, "price": 25, "featured": false},
+  {"name": "wire", "bpm": 138, "price": 25, "featured": false},
+  {"name": "hollow", "bpm": 124, "price": 25, "featured": false},
+  {"name": "parkway", "bpm": 100, "price": 25, "featured": false},
+  {"name": "blue hour", "bpm": 82, "price": 25, "featured": false},
+  {"name": "tape hiss", "bpm": 90, "price": 25, "featured": false}
+]
