@@ -443,9 +443,11 @@ function mk(b){
 const FEAT=BEATS.filter(b=>b.featured).slice(0,5),REST=[...BEATS];
 for(let i=REST.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[REST[i],REST[j]]=[REST[j],REST[i]]} // all beats: every beat, new random order each visit
 FEAT.forEach(b=>$("feat").appendChild(mk(b)));
-REST.forEach(b=>$("list").appendChild(mk(b)));
+const SHOW_CATALOG=false; // flip to true to bring the catalog section back
+if(SHOW_CATALOG)REST.forEach(b=>$("list").appendChild(mk(b)));
 $("featSec").hidden=!FEAT.length;
-$("allSec").hidden=!REST.length;$("promo").hidden=BEATS.length<2;
+$("allSec").hidden=!SHOW_CATALOG||!REST.length;const SHOW_PROMO=false; // flip to true to bring back "need more?"
+$("promo").hidden=!SHOW_PROMO||(SHOW_CATALOG?BEATS:FEAT).length<2;
 refreshAdd();renderCart();
 document.addEventListener("pointermove",e=>{
   const r=e.target.closest&&e.target.closest(".row");if(!r)return;
@@ -507,4 +509,3 @@ $("thx").onclick=()=>{$("thanks").hidden=true};
 </script>
 </body>
 </html>
-
