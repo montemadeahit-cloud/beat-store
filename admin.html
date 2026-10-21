@@ -64,7 +64,7 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
     <h2>add a beat</h2>
     <div class="row3"><input class="in" id="nName" placeholder="beat name"><input class="in" id="nGenre" placeholder="genre (optional)" maxlength="24"><input class="in" id="nBpm" type="number" placeholder="bpm"><input class="in" id="nPrice" type="number" placeholder="$ price"></div>
     <input class="in" id="nCo" placeholder="co-producers (optional, separate with commas)" maxlength="120" style="margin-bottom:6px">
-    <label class="chk"><input type="checkbox" id="nFeat"> featured</label>
+    <label class="chk"><input type="checkbox" id="nFeat"> featured</label> <span class="st" id="featCount"></span>
     <label class="lab">mp3 file (people can listen on the site, and buyers get it after paying)</label><input type="file" id="nFull" accept=".mp3,audio/mpeg">
     <div class="bar" id="nBar"><i></i></div>
     <div class="acts"><button class="btn" id="nAdd">add beat</button><span class="st" id="nSt"></span></div>
@@ -96,6 +96,7 @@ function upload(slug,kind,file,onp){
     x.send(file);
   });
 }
+const bumpMsg=r=>r.bumped&&r.bumped.length?` · "${r.bumped.join('", "')}" was swapped out of featured (max 5)`:"";
 const fileOk=f=>f&&/\.mp3$/i.test(f.name);
 async function peaksOf(buf){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
@@ -121,6 +122,7 @@ async function boot(){
 }
 async function load(){
   const beats=await api("GET","/api/admin/beats"),box=$("#list");
+  $("#featCount").textContent=`(${beats.filter(b=>b.featured).length}/5 featured · a 6th replaces the oldest)`;
   if(!beats.length){box.innerHTML='<p class="empty">no beats yet. add your first one above.</p>';return}
   box.innerHTML=beats.map(b=>`
   <div class="box" data-slug="${esc(b.slug)}">
@@ -140,8 +142,8 @@ $("#list").addEventListener("click",async e=>{
   try{
     if(act==="save"){
       const g=k=>card.querySelector(`[data-k=${k}]`);
-      await api("PATCH","/api/admin/beats/"+slug,{name:g("name").value,genre:g("genre").value,coprod:g("coprod").value,bpm:g("bpm").value,price:g("price").value,featured:g("featured").checked});
-      st.textContent="saved";setTimeout(load,600);
+      const r=await api("PATCH","/api/admin/beats/"+slug,{name:g("name").value,genre:g("genre").value,coprod:g("coprod").value,bpm:g("bpm").value,price:g("price").value,featured:g("featured").checked});
+      st.textContent="saved"+bumpMsg(r);setTimeout(load,r.bumped&&r.bumped.length?2500:600);
     }
     if(act==="del"){
       if(!confirm("delete this beat and its files? this can't be undone."))return;
@@ -168,11 +170,11 @@ $("#nAdd").onclick=async()=>{
   btn.disabled=true;st.style.color="";bar.style.display="block";
   let slug=null;
   try{
-    const b=await api("POST","/api/admin/beats",{name:$("#nName").value,genre:$("#nGenre").value,coprod:$("#nCo").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
+    const b=window.__lastAdd=await api("POST","/api/admin/beats",{name:$("#nName").value,genre:$("#nGenre").value,coprod:$("#nCo").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
     slug=b.slug;
     await upload(slug,"full",fl,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});
     st.textContent="building waveform…";await savePeaks(slug,fl);
-    st.textContent="added! it's live.";
+    st.textContent="added! it's live."+bumpMsg(window.__lastAdd||{});
     ["#nName","#nGenre","#nCo","#nBpm","#nPrice","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
     bar.style.display="none";bar.firstElementChild.style.width="0";
     load();
@@ -188,4 +190,3 @@ $("#logout").onclick=async()=>{await fetch("/api/admin/logout",{method:"POST"});
 boot();
 </script>
 </body></html>
-
