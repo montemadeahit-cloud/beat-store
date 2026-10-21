@@ -291,7 +291,7 @@ app.post("/api/checkout", async (req, res) => {
       line_items: beats.map(b => ({
         quantity: 1,
         price_data: { currency: "usd", unit_amount: Math.round(b.price * 100 * (bundle ? 0.75 : 1)),
-          product_data: { name: b.name, description: `${b.bpm} bpm · mp3 download${bundle ? " · 25% off (2+ beats)" : ""}` } },
+          product_data: { name: b.name, description: `${b.bpm} bpm · mp3 download${bundle ? " · multi-beat discount: 25% off" : ""}` } },
       })),
       payment_intent_data: { receipt_email: email },
       metadata: { slugs: beats.map(b => b.slug).join(","), buyer: String(name || "").slice(0, 100) },
