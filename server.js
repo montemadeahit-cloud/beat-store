@@ -76,6 +76,50 @@ const safeName = n => n.replace(/[^\w\- ().,&]+/g, "").replace(/\s+/g, " ").trim
 const producers = b => ["montemadethis", ...String(b.coprod || "").split(/\s*(?:,|\sx\s|&)\s*/).map(s => s.trim()).filter(Boolean)];
 const fileName = b => safeName(`${b.name} (prod. ${producers(b).join(" x ")})`) + ".mp3"; // credits travel with the file
 
+/* ---------- branded purchase email (black, like the site) ---------- */
+const LOGO_FILE = path.join(ROOT, "email-logo.png"); // white wordmark, transparent background
+const HAS_LOGO = fs.existsSync(LOGO_FILE);
+function purchaseEmail({ first, beats, link, attach, one }) {
+  const F = "font-family:Helvetica,Arial,sans-serif;", G = "#8f8f8f", H = "#2a2a2a";
+  const logo = HAS_LOGO
+    ? `<img src="${BASE_URL}/email-logo.png" width="220" alt="montemadethis." style="display:block;width:220px;max-width:100%;height:auto;border:0">`
+    : `<div style="${F}font-size:28px;font-weight:900;letter-spacing:-1px;color:#fff">montemadethis.</div>`;
+  const cards = beats.map(b => `
+    <tr><td style="padding:0 0 12px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${H};border-radius:14px;border-collapse:separate">
+        <tr><td style="padding:20px 22px">
+          <div style="${F}font-size:22px;font-weight:700;color:#fff;line-height:1.2">${esc(b.name)}</div>
+          <div style="${F}font-size:13px;color:${G};line-height:1.5;padding-top:4px">prod. ${esc(producers(b).join(" x "))}</div>
+          <div style="${F}font-size:13px;color:${G};line-height:1.5">${[b.genre, b.bpm + " bpm", "mp3"].filter(Boolean).map(esc).join(" · ")}</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:16px"><tr>
+            <td bgcolor="#ffffff" style="border-radius:999px">
+              <a href="${link(b)}" style="${F}display:inline-block;padding:12px 26px;font-size:15px;font-weight:900;color:#000;text-decoration:none;border-radius:999px">download</a>
+            </td></tr></table>
+        </td></tr>
+      </table>
+    </td></tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"></head>
+<body style="margin:0;padding:0;background:#000" bgcolor="#000000">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="background:#000">
+<tr><td align="center" style="padding:32px 16px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+    <tr><td style="padding:0 0 36px">${logo}</td></tr>
+    <tr><td style="${F}font-size:40px;font-weight:900;letter-spacing:-1.5px;line-height:1;color:#fff;padding:0 0 14px">thank you${first ? `, ${first}` : ""}.</td></tr>
+    <tr><td style="${F}font-size:16px;line-height:1.6;color:${G};padding:0 0 28px">${attach
+      ? `your ${one ? "beat is" : "beats are"} attached to this email. you can also download ${one ? "it" : "them"} below any time in the next 30 days.`
+      : `your ${one ? "beat is" : "beats are"} ready. download below any time in the next 30 days.`}</td></tr>
+    ${cards}
+    <tr><td style="padding:16px 0 0;border-top:1px solid ${H}"></td></tr>
+    <tr><td style="${F}font-size:13px;line-height:1.7;color:${G};padding:4px 0 24px">
+      must credit (prod. montemadethis) &amp; any producers listed in the file name<br>
+      must provide proper splits when uploading for profit on any streaming service</td></tr>
+    <tr><td style="${F}font-size:13px;line-height:1.7;color:${G}">questions? just reply to this email.<br>
+      <a href="${BASE_URL}" style="color:#fff;text-decoration:underline">${BASE_URL.replace(/^https?:\/\//, "")}</a></td></tr>
+  </table>
+</td></tr></table></body></html>`;
+}
+
 /* ---------- fulfillment: email the buyer their mp3s ---------- */
 async function fulfill(session) {
   const beats = (session.metadata?.slugs || "").split(",").map(getBeat).filter(Boolean);
@@ -91,23 +135,18 @@ async function fulfill(session) {
     ? files.filter(f => fs.existsSync(f.file)).map(f => ({ filename: fileName(f.b), content: fs.readFileSync(f.file) }))
     : [];
 
-  const links = beats.map(b =>
-    `<li><a href="${BASE_URL}/download/${b.slug}?o=${encodeURIComponent(session.id)}&e=${exp}&sig=${sign(b.slug, session.id, exp)}">download ${esc(fileName(b))}</a></li>`).join("");
-  const names = beats.map(b => esc(b.name)).join(", ");
   const one = beats.length === 1;
-
+  const link = b => `${BASE_URL}/download/${b.slug}?o=${encodeURIComponent(session.id)}&e=${exp}&sig=${sign(b.slug, session.id, exp)}`;
   const titles = beats.map(b => `"${b.name}" (${b.bpm} bpm)`).join(", ");
   const { error } = await resend.emails.send({
     from: FROM_EMAIL, to, replyTo: OWNER_EMAIL,
     subject: `Thank you for your purchase: ${titles} ${one ? "is" : "are"} available for download`,
-    html: `<div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">
-      <p>${first ? `hey ${first},` : "hey,"}</p>
-      <p>thank you for purchasing. ${attach ? `attached below ${one ? "is your beat" : "are your beats"}` : `${one ? "your beat is" : "your beats are"} ready to download below`}: <b>${names}</b></p>
-      <p>must credit <b>(prod. montemadethis)</b> &amp; any producers listed in the file name<br>must provide proper splits when uploading for profit on any streaming service</p>
-      <p>${attach ? `your mp3${one ? " is" : "s are"} attached. ` : "the files were too large to attach, so use the links below. "}you can also re-download any time in the next 30 days:</p>
-      <ul>${links}</ul>
-      <p>questions? just reply to this email.</p>
-      <p>— montemadethis</p></div>`,
+    html: purchaseEmail({ first, beats, link, attach, one }),
+    text: [`${first ? `hey ${first},` : "hey,"}`, "", `thank you for purchasing. ${one ? "here is your beat" : "here are your beats"}:`,
+      ...beats.map(b => `- ${b.name} (prod. ${producers(b).join(" x ")}) · ${b.bpm} bpm\n  ${link(b)}`), "",
+      "must credit (prod. montemadethis) & any producers listed in the file name",
+      "must provide proper splits when uploading for profit on any streaming service", "",
+      "download links work for 30 days. questions? just reply to this email.", "", "— montemadethis"].join("\n"),
     attachments,
   }, { idempotencyKey: "order-" + session.id });
   if (error) throw new Error("email failed: " + JSON.stringify(error));
@@ -333,6 +372,7 @@ app.get("/beat/:slug", (req, res) => {
   const b = getBeat(req.params.slug);
   b && b.hasFull ? res.set("Cache-Control", "no-cache").type("html").send(render(b)) : res.redirect("/");
 });
+app.get("/email-logo.png", (_req, res) => HAS_LOGO ? res.sendFile(LOGO_FILE, { headers: { "Cache-Control": "public, max-age=86400", "Content-Type": "image/png" } }) : res.sendStatus(404));
 app.get("/health", (_req, res) => res.send("ok"));
 
 app.listen(PORT, () => console.log(`montemadethis running on ${BASE_URL} (data: ${DATA_DIR})`));
