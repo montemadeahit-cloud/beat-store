@@ -317,3 +317,4 @@ app.get("/beat/:slug", (req, res) => {
 app.get("/health", (_req, res) => res.send("ok"));
 
 app.listen(PORT, () => console.log(`montemadethis running on ${BASE_URL} (data: ${DATA_DIR})`));
+
