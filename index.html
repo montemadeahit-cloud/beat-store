@@ -302,7 +302,7 @@ function seeded(name,n=120){let s=0;for(const c of name)s=(s*31+c.charCodeAt(0))
 function sizeWf(){const r=wf.getBoundingClientRect(),d=devicePixelRatio||1;wfW=r.width;wfH=r.height;wf.width=Math.round(wfW*d);wf.height=Math.round(wfH*d);cx.setTransform(d,0,0,d,0,0)}
 function paint(g,W,H,b,p,live){
   g.clearRect(0,0,W,H);if(!b||!W)return;
-  const dat=DATA.get(b)||{},pk=dat.peaks||(b.peaks&&b.peaks.length?b.peaks:null)||dat.seed||(dat.seed=seeded(b.name)),N=pk.length;DATA.set(b,dat);
+  const dat=DATA.get(b)||{},pk=(b.peaks&&b.peaks.length?b.peaks:null)||dat.peaks||dat.seed||(dat.seed=seeded(b.name)),N=pk.length;DATA.set(b,dat);
   const step=W/N,bw=Math.max(2,Math.min(5,step*.6)),head=p*N;
   g.lineCap="round";g.lineWidth=bw;
   for(let i=0;i<N;i++){
@@ -358,7 +358,7 @@ async function decode(buf,n){
 async function analyze(b){
   const dat=DATA.get(b)||{};DATA.set(b,dat);
   if(!b.src||dat.env||dat.busy)return;dat.busy=true;
-  try{const r=await decode(await (await fetch(b.src)).arrayBuffer(),120);dat.peaks=r.peaks;dat.env=r.env;dat.dur=r.dur;if(!(b.peaks&&b.peaks.length))b.peaks=r.peaks;els.forEach(([el,x])=>{if(x===b)el.querySelectorAll(".wv .b").forEach(n=>{n.innerHTML=wave(b)})});kick()}catch(e){console.error(e);dat.busy=false}
+  try{const r=await decode(await (await fetch(b.src)).arrayBuffer(),120);const had=b.peaks&&b.peaks.length;dat.env=r.env;dat.dur=r.dur;if(!had){dat.peaks=b.peaks=r.peaks;els.forEach(([el,x])=>{if(x===b)el.querySelectorAll(".wv .b").forEach(n=>{n.innerHTML=wave(b)})})}kick()}catch(e){console.error(e);dat.busy=false}
 }
 function seekRow(b,f,el){
   if(b!==cur){b._seek=f;load(b,el);return}
@@ -486,7 +486,7 @@ $("contactLink").onclick=e=>{
 const els=[];
 function rows(){$("bd").classList.toggle("on",!!bdCur&&bdCur===cur&&playing);els.forEach(([el])=>{const me=el===curEl;el.classList.toggle("cur",me);el.classList.toggle("on",me&&playing);if(!me)el.style.setProperty("--p",0)})}
 function wave(b){const pk=b.peaks&&b.peaks.length?b.peaks:seeded(b.name,48),n=48,o=[];
-  for(let i=0;i<n;i++){const v=pk[Math.min(pk.length-1,Math.floor(i*pk.length/n))];o.push(`<i style="height:${Math.round(14+86*v)}%"></i>`)}return o.join("")}
+  for(let i=0;i<n;i++){let v=0;for(let k=Math.floor(i*pk.length/n),e=Math.max(k+1,Math.floor((i+1)*pk.length/n));k<e&&k<pk.length;k++)v=Math.max(v,pk[k]);o.push(`<i style="height:${Math.round(14+86*v)}%"></i>`)}return o.join("")}
 function mk(b){
   const el=document.createElement("div");el.className="row";
   const W=wave(b);
