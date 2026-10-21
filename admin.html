@@ -63,6 +63,7 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
   <div class="box">
     <h2>add a beat</h2>
     <div class="row3"><input class="in" id="nName" placeholder="beat name"><input class="in" id="nGenre" placeholder="genre (optional)" maxlength="24"><input class="in" id="nBpm" type="number" placeholder="bpm"><input class="in" id="nPrice" type="number" placeholder="$ price"></div>
+    <input class="in" id="nCo" placeholder="co-producers (optional, separate with commas)" maxlength="120" style="margin-bottom:6px">
     <label class="chk"><input type="checkbox" id="nFeat"> featured</label>
     <label class="lab">mp3 file (people can listen on the site, and buyers get it after paying)</label><input type="file" id="nFull" accept=".mp3,audio/mpeg">
     <div class="bar" id="nBar"><i></i></div>
@@ -125,6 +126,7 @@ async function load(){
   <div class="box" data-slug="${esc(b.slug)}">
     <div style="margin-bottom:12px"><span class="name">${esc(b.name)}</span>${b.genre?`<span class="badge">${esc(b.genre)}</span>`:""}<span class="badge ${b.hasFull?"live":""}">${b.hasFull?"live":"hidden: needs mp3"}</span></div>
     <div class="row3"><input class="in" data-k="name" value="${esc(b.name)}" aria-label="name"><input class="in" data-k="genre" value="${esc(b.genre||"")}" placeholder="genre" maxlength="24" aria-label="genre"><input class="in" data-k="bpm" type="number" value="${b.bpm}" aria-label="bpm"><input class="in" data-k="price" type="number" value="${b.price}" aria-label="price"></div>
+    <input class="in" data-k="coprod" value="${esc(b.coprod||"")}" placeholder="co-producers (optional, separate with commas)" maxlength="120" aria-label="co-producers" style="margin-bottom:6px">
     <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>
     <div class="file"><span>mp3: ${b.hasFull?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="full" accept=".mp3,audio/mpeg"></div>
     <div class="bar"><i></i></div>
@@ -138,7 +140,7 @@ $("#list").addEventListener("click",async e=>{
   try{
     if(act==="save"){
       const g=k=>card.querySelector(`[data-k=${k}]`);
-      await api("PATCH","/api/admin/beats/"+slug,{name:g("name").value,genre:g("genre").value,bpm:g("bpm").value,price:g("price").value,featured:g("featured").checked});
+      await api("PATCH","/api/admin/beats/"+slug,{name:g("name").value,genre:g("genre").value,coprod:g("coprod").value,bpm:g("bpm").value,price:g("price").value,featured:g("featured").checked});
       st.textContent="saved";setTimeout(load,600);
     }
     if(act==="del"){
@@ -166,12 +168,12 @@ $("#nAdd").onclick=async()=>{
   btn.disabled=true;st.style.color="";bar.style.display="block";
   let slug=null;
   try{
-    const b=await api("POST","/api/admin/beats",{name:$("#nName").value,genre:$("#nGenre").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
+    const b=await api("POST","/api/admin/beats",{name:$("#nName").value,genre:$("#nGenre").value,coprod:$("#nCo").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
     slug=b.slug;
     await upload(slug,"full",fl,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});
     st.textContent="building waveform…";await savePeaks(slug,fl);
     st.textContent="added! it's live.";
-    ["#nName","#nGenre","#nBpm","#nPrice","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
+    ["#nName","#nGenre","#nCo","#nBpm","#nPrice","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
     bar.style.display="none";bar.firstElementChild.style.width="0";
     load();
   }catch(err){st.style.color="#ff6b6b";st.textContent=(slug?"beat was created but upload failed: ":"")+err.message+(slug?". find it below and re-upload the files.":"");if(slug)load()}
