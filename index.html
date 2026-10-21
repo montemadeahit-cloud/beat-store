@@ -440,10 +440,12 @@ function mk(b){
   el.querySelector(".more").onclick=e=>{e.stopPropagation();openMenu(e.currentTarget,b)};
   els.push([el,b]);return el;
 }
-BEATS.filter(b=>b.featured).slice(0,5).forEach(b=>$("feat").appendChild(mk(b)));
-BEATS.forEach(b=>$("list").appendChild(mk(b)));
-$("featSec").hidden=!BEATS.some(b=>b.featured);
-$("allSec").hidden=!BEATS.length;$("promo").hidden=BEATS.length<2;
+const FEAT=BEATS.filter(b=>b.featured).slice(0,5),REST=[...BEATS];
+for(let i=REST.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[REST[i],REST[j]]=[REST[j],REST[i]]} // all beats: every beat, new random order each visit
+FEAT.forEach(b=>$("feat").appendChild(mk(b)));
+REST.forEach(b=>$("list").appendChild(mk(b)));
+$("featSec").hidden=!FEAT.length;
+$("allSec").hidden=!REST.length;$("promo").hidden=BEATS.length<2;
 refreshAdd();renderCart();
 document.addEventListener("pointermove",e=>{
   const r=e.target.closest&&e.target.closest(".row");if(!r)return;
