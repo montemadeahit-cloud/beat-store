@@ -81,6 +81,7 @@ h2{font-weight:900;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.035em;line-
 .co-sum{border:1px solid var(--hair);border-radius:14px;padding:20px;position:sticky;top:24px}
 .co-sum .tot{margin:14px 0 0}
 .pay-box{border:1px solid var(--hair);border-radius:12px;padding:16px;color:var(--g);margin-bottom:16px;font-size:15px}
+.pay-box.live{padding:0;border:0;overflow:hidden;min-height:120px}
 .s2{display:none;color:var(--g);font-size:13px;line-height:1.3}.s2 span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .play{width:51px;height:51px;border-radius:50%;border:1px solid var(--hair);background:transparent;color:var(--w);display:grid;place-items:center;cursor:pointer;flex:none;padding:0}
 .play:hover,.row:hover .play{background:var(--w);color:var(--b)}
@@ -93,6 +94,15 @@ h2{font-weight:900;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.035em;line-
 .player{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#0a0a0a;border-top:1px solid var(--hair);
   padding:12px 20px calc(12px + env(safe-area-inset-bottom,0px));transform:translateY(110%);transition:transform .3s}
 .player.open{transform:none}
+.chev{display:grid;place-items:center;padding:0}.chev svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .25s}
+.player.mini{left:auto;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));padding:6px 6px 6px 6px;border:1px solid var(--hair);border-radius:999px;max-width:calc(100% - 32px);box-shadow:0 10px 30px rgba(0,0,0,.6);transform:translateY(calc(100% + 40px))}
+.player.mini.open{transform:none}
+.player.mini .pl-in{display:flex;align-items:center;gap:10px}
+.player.mini .pl-c,.player.mini .pl-r .add,.player.mini .pl-info .m{display:none}
+.player.mini .play{width:40px;height:40px}
+.player.mini .pl-info{cursor:pointer;min-width:0}.player.mini .pl-info .n{font-size:15px;max-width:200px}
+.player.mini .pl-r{gap:2px}.player.mini .chev svg{transform:rotate(180deg)}
+body.pad.mini{padding-bottom:80px}
 .pl-in{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.7fr) minmax(0,1fr);gap:16px;align-items:center}
 .pl-l{display:flex;align-items:center;gap:14px;min-width:0}
 .pl-c{display:flex;align-items:center;gap:12px;color:var(--g);font-size:13px;font-variant-numeric:tabular-nums}
@@ -123,6 +133,7 @@ h2{font-weight:900;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.035em;line-
 .tot{display:flex;justify-content:space-between;font-size:18px;margin-bottom:14px}
 .go{display:block;width:100%;text-align:center;text-decoration:none;background:var(--w);color:var(--b);font-weight:900;border-radius:999px;padding:14px;border:0;cursor:pointer}
 .go[aria-disabled=true]{opacity:.35;pointer-events:none}
+.go[hidden]{display:none}
 footer{margin-top:64px;border-top:1px solid var(--hair);padding:28px 0 calc(28px + env(safe-area-inset-bottom,0px));color:var(--g);font-size:15px}
 .ft{display:flex;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
 .more{width:36px;height:36px;border:0;border-radius:50%;background:none;color:var(--g);display:grid;place-items:center;cursor:pointer;padding:0;flex:none;transition:color .15s,background .15s}
@@ -204,7 +215,7 @@ footer{margin-top:64px;border-top:1px solid var(--hair);padding:28px 0 calc(28px
   <div class="pl-l"><button class="play" id="pp" aria-label="play or pause"><svg class="pl" viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg><svg class="pa" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
     <div class="pl-info"><div class="n" id="pn"></div><div class="m" id="pm"></div></div></div>
   <div class="pl-c"><span id="tc">0:00</span><canvas id="wf" role="slider" tabindex="0" aria-label="seek"></canvas><span id="td">0:30</span></div>
-  <div class="pl-r"><button class="add" id="pa"></button><button class="x" id="px" aria-label="close player">×</button></div>
+  <div class="pl-r"><button class="add" id="pa"></button><button class="x chev" id="pmin" aria-label="collapse player"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><button class="x" id="px" aria-label="close player">×</button></div>
 </div></div>
 
 <div class="co" id="co" hidden><div class="co-in">
@@ -353,6 +364,12 @@ wf.onkeydown=bdWf.onkeydown=e=>{if(e.currentTarget===bdWf&&bdCur!==cur)return;co
 if(window.ResizeObserver){new ResizeObserver(()=>{sizeWf();kick()}).observe(wf);new ResizeObserver(()=>{sizeBd();kick()}).observe(bdWf)}
 $("pp").onclick=()=>playing?pause():play();
 $("px").onclick=closePlayer;
+let mini=false;try{mini=localStorage.getItem("mmt_mini")==="1"}catch(e){}
+function setMini(v){mini=v;$("pl").classList.toggle("mini",v);document.body.classList.toggle("mini",v);$("pmin").setAttribute("aria-label",v?"expand player":"collapse player");
+  try{localStorage.setItem("mmt_mini",v?"1":"0")}catch(e){}if(!v)requestAnimationFrame(()=>{sizeWf();kick()})}
+$("pmin").onclick=()=>setMini(!mini);
+document.querySelector(".pl-info").onclick=()=>{if(mini)setMini(false)};
+setMini(mini);
 
 /* cart */
 const has=b=>cart.includes(b.slug);
@@ -380,7 +397,7 @@ function updateGo(){
   const it=items(),sum=totals(it).pay,
     ok=it.length&&$("fn").value.trim()&&$("ln").value.trim()&&/^\S+@\S+\.\S+$/.test($("em").value.trim()),go=$("go");
   go.setAttribute("aria-disabled",ok&&!busy?"false":"true");
-  go.textContent=busy?"opening secure checkout…":"pay "+money(sum);
+  go.textContent=busy?"loading secure payment…":"continue to payment · "+money(sum);
 }
 $("go").onclick=async e=>{
   e.preventDefault();
@@ -390,12 +407,32 @@ $("go").onclick=async e=>{
     const r=await fetch("/api/checkout",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({slugs:cart,email:$("em").value.trim(),name:($("fn").value.trim()+" "+$("ln").value.trim()).trim()})});
     const j=await r.json().catch(()=>({}));
-    if(!r.ok||!j.url)throw new Error(j.error||"something went wrong, please try again");
+    if(!r.ok||!(j.url||j.clientSecret))throw new Error(j.error||"something went wrong, please try again");
+    if(j.clientSecret)return await mountPay(j);
     location.href=j.url;
   }catch(err){busy=false;$("payErr").textContent=err.message;updateGo()}
 };
+/* payment form inside the site (Stripe embedded checkout) */
+let embedded=null;
+function loadStripeJs(){
+  if(window.Stripe)return Promise.resolve();
+  const add=src=>new Promise((ok,no)=>{const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=no;document.head.appendChild(s)});
+  return add("https://js.stripe.com/endive/stripe.js").catch(()=>add("https://js.stripe.com/v3/")).catch(()=>{throw new Error("couldn't load secure checkout, please try again")});
+}
+async function mountPay(j){
+  await loadStripeJs();
+  const st=Stripe(j.publishableKey),make=st.createEmbeddedCheckoutPage||st.initEmbeddedCheckout;
+  embedded=await make.call(st,{fetchClientSecret:async()=>j.clientSecret});
+  const box=$("payBox");box.textContent="";box.classList.add("live");embedded.mount(box);
+  $("go").hidden=true;["fn","ln","em"].forEach(i=>$(i).disabled=true);busy=false;
+}
+function unmountPay(){
+  if(!embedded)return;try{embedded.destroy()}catch(e){}embedded=null;
+  const box=$("payBox");box.classList.remove("live");box.innerHTML="";box.textContent=PAY_MSG;
+  $("go").hidden=false;["fn","ln","em"].forEach(i=>$(i).disabled=false);updateGo();
+}
 addEventListener("pageshow",()=>{busy=false;updateGo()});
-function openCo(v){$("co").hidden=!v;document.body.style.overflow=v?"hidden":"";if(v)$("co").scrollTop=0}
+function openCo(v){if(!v)unmountPay();$("co").hidden=!v;document.body.style.overflow=v?"hidden":"";if(v)$("co").scrollTop=0}
 function drawer(el,v){el.classList.toggle("open",v);$("ov").classList.toggle("open",v)}
 $("cartBtn").onclick=()=>drawer($("drawer"),true);
 $("cx").onclick=()=>drawer($("drawer"),false);
@@ -404,7 +441,8 @@ $("items").onclick=e=>{const n=e.target.dataset.n;if(n)toggleCart(BEATS.find(b=>
 $("pa").onclick=()=>toggleCart(cur);
 $("toCo").onclick=()=>{if(!items().length)return;drawer($("drawer"),false);openCo(true)};
 $("coBack").onclick=()=>openCo(false);
-$("payBox").textContent="pay by card, Apple Pay or Google Pay on Stripe’s secure page. your card details never touch this site.";
+const PAY_MSG="pay by card, Apple Pay, Google Pay or bank account, secured by Stripe. card payments deliver instantly; bank payments take a few business days to clear, then your beats are emailed. your card details never touch this site.";
+$("payBox").textContent=PAY_MSG;
 $("em").oninput=$("fn").oninput=$("ln").oninput=updateGo;
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){openCo(false);drawer($("drawer"),false);closeMenu()}});
 
