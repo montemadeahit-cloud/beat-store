@@ -26,12 +26,13 @@ header{position:sticky;top:0;z-index:5;padding-top:env(safe-area-inset-top,0px);
 .hd a.txt:hover,.hd button:hover{color:var(--w)}
 .hd .cartb{color:var(--w);border:1px solid var(--hair);border-radius:999px;padding:8px 16px}
 .hd .cartb:hover{background:var(--w);color:var(--b)}
-.intro{padding:44px 0 0}
+.intro{padding:44px 0 0;text-align:center}
 .intro h1{font-weight:900;font-size:clamp(36px,6vw,60px);letter-spacing:-.04em;line-height:.9;margin:0 0 12px}
-.intro p{display:inline-block;margin:0 0 0 -10px;padding:6px 10px;border-radius:8px;color:var(--g);font-size:12px;opacity:.8;transition:background .4s,color .4s,opacity .4s}
+.intro p{display:inline-block;margin:0;padding:6px 10px;border-radius:8px;color:var(--g);font-size:12px;opacity:.8;transition:background .4s,color .4s,opacity .4s}
 .intro p.flash{background:var(--w);color:var(--b);opacity:1}.intro p.flash a{color:var(--b)}
 .intro a{color:var(--g);text-underline-offset:2px;transition:color .15s}.intro a:hover{color:var(--w)}
 section{padding:36px 0 16px}
+#allSec{padding-top:64px}
 .head{margin-bottom:16px}
 h2{font-weight:900;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;line-height:.9;margin:0}
 .fbox,.list{overflow-y:auto;border:1px solid var(--hair);border-radius:14px;padding:0 14px;scrollbar-width:thin;scrollbar-color:#7a7a7a #161616}
@@ -39,6 +40,7 @@ h2{font-weight:900;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;line-he
 .fbox::-webkit-scrollbar-track,.list::-webkit-scrollbar-track{background:#161616;border-radius:8px}
 .fbox::-webkit-scrollbar-thumb,.list::-webkit-scrollbar-thumb{background:#7a7a7a;border-radius:8px}
 .fbox,.list{max-height:calc(74px*5 + 2px)}
+.fbox .row,.list .row{height:74px}
 .fbox .row:last-child,.list .row:last-child{border-bottom:0}
 .row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 200px minmax(0,1fr);gap:16px;align-items:center;padding:14px 8px;border-bottom:1px solid var(--hair);border-radius:10px;cursor:pointer}
 .row>*{position:relative}
