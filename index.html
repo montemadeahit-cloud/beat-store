@@ -114,10 +114,8 @@ h2{font-weight:900;font-size:clamp(26px,4vw,38px);letter-spacing:-.035em;line-he
 .tot{display:flex;justify-content:space-between;font-size:18px;margin-bottom:14px}
 .go{display:block;width:100%;text-align:center;text-decoration:none;background:var(--w);color:var(--b);font-weight:900;border-radius:999px;padding:14px;border:0;cursor:pointer}
 .go[aria-disabled=true]{opacity:.35;pointer-events:none}
-footer{margin-top:56px;border-top:1px solid var(--hair);padding:40px 0 calc(72px + env(safe-area-inset-bottom,0px))}
-.msg{display:inline-block;margin:0;padding:10px 14px;margin-left:-14px;border-radius:10px;color:var(--g);transition:background .4s,color .4s}
-.msg a{color:var(--w);transition:color .4s}
-.msg.flash{background:var(--w);color:var(--b)}.msg.flash a{color:var(--b)}
+footer{margin-top:56px;border-top:1px solid var(--hair);padding:24px 0 calc(24px + env(safe-area-inset-bottom,0px));color:var(--g);font-size:13px}
+.ft{display:flex;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
 .more{width:36px;height:36px;border:0;border-radius:50%;background:none;color:var(--g);display:grid;place-items:center;cursor:pointer;padding:0;flex:none;transition:color .15s,background .15s}
 .more:hover{color:var(--w);background:rgba(255,255,255,.12)}
 .more svg{width:20px;height:20px;fill:currentColor}
@@ -172,7 +170,7 @@ footer{margin-top:56px;border-top:1px solid var(--hair);padding:40px 0 calc(72px
 
 <header><div class="wrap hd">
     <a class="lg" href="#top" aria-label="montemadethis"><svg class="logo" viewBox="0 0 1000 89.4"><use href="#logo"/></svg></a>
-  <div class="hr"><a class="txt" id="contactLink" href="#contact">contact</a><button class="cartb" id="cartBtn">cart (<span id="cnt">0</span>)</button></div>
+  <div class="hr"><a class="txt" id="contactLink" href="mailto:montemadeahit@gmail.com">contact</a><button class="cartb" id="cartBtn">cart (<span id="cnt">0</span>)</button></div>
 </div></header>
 
 <main id="top"><div class="wrap">
@@ -181,8 +179,9 @@ footer{margin-top:56px;border-top:1px solid var(--hair);padding:40px 0 calc(72px
   <section id="allSec"><div class="head"><h2>all beats</h2></div><div class="list" id="list"></div></section>
 </div></main>
 
-<footer id="contact"><div class="wrap">
-  <p class="msg" id="msg">for any questions/inquiries and custom work, please email: <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p>
+<footer><div class="wrap ft">
+  <span>© <span id="yr">2026</span> montemadethis</span>
+  <span>visa · mastercard · amex · discover · apple pay · google pay</span>
 </div></footer>
 
 <div class="player" id="pl" role="region" aria-label="player"><div class="pl-in">
@@ -242,7 +241,7 @@ const BEATS=JSON.parse($("catalog").textContent);
 const PLAY='<svg class="pl" viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg><svg class="pa" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
 const DOTS='<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
 const fmt=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
-let cur=null,playing=false,audio=null,timer=null,t=0,dur=30,cart=[],bdCur=null;
+let cur=null,curEl=null,playing=false,audio=null,timer=null,t=0,dur=30,cart=[],bdCur=null;
 try{cart=JSON.parse(localStorage.getItem("mmt_cart")||"[]").filter(n=>BEATS.some(b=>b.slug===n))}catch(e){}
 
 /* player */
@@ -274,21 +273,22 @@ function frame(ts){
   if(playing)target=env?env[Math.min(env.length-1,Math.floor(c*ENV_HZ))]||0:.5+.5*Math.sin(ts/170)*Math.sin(ts/430+1);
   level+=(target-level)*.3;
   $("tc").textContent=fmt(c);$("td").textContent=fmt(d);
-  drawWf(d?c/d:0);els.forEach(([e,b])=>{if(b===cur)e.style.setProperty("--p",d?Math.min(1,c/d):0)});
+  drawWf(d?c/d:0);if(curEl)curEl.style.setProperty("--p",d?Math.min(1,c/d):0);
   if(playing)raf=requestAnimationFrame(frame);
 }
 function kick(){cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
 function setPlaying(v){playing=v;$("pl").classList.toggle("playing",v);rows();last=performance.now();kick()}
 function pause(){if(audio)audio.pause();setPlaying(false)}
 function play(){if(audio)audio.play().catch(()=>setPlaying(false));setPlaying(true)}
-function load(b){
-  pause();audio=null;cur=b;t=0;level=0;
+const rowFor=b=>(els.find(([e,x])=>x===b&&e.parentNode===$("list"))||els.find(([e,x])=>x===b)||[null])[0];
+function load(b,el){
+  pause();audio=null;cur=b;curEl=el||rowFor(b);t=0;level=0;
   if(b.src){audio=new Audio(b.src);audio.onended=()=>setPlaying(false);audio.onloadedmetadata=()=>{if(b._seek!=null){audio.currentTime=b._seek*audio.duration;b._seek=null}kick()}}else if(b._seek!=null){t=b._seek*dur;b._seek=null}
   $("pn").textContent=b.name;$("pm").textContent=b.bpm+" bpm";
   $("pl").classList.add("open");document.body.classList.add("pad");
   sizeWf();refreshAdd();analyze(b);play();
 }
-function closePlayer(){pause();cur=null;audio=null;level=0;$("pl").classList.remove("open");document.body.classList.remove("pad");rows();kick()}
+function closePlayer(){pause();cur=null;curEl=null;audio=null;level=0;$("pl").classList.remove("open");document.body.classList.remove("pad");rows();kick()}
 /* real waveform + loudness from the uploaded audio file */
 async function decode(buf,n){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
@@ -304,8 +304,9 @@ async function analyze(b){
   if(!b.src||dat.env||dat.busy)return;dat.busy=true;
   try{const r=await decode(await (await fetch(b.src)).arrayBuffer(),120);dat.peaks=r.peaks;dat.env=r.env;if(!(b.peaks&&b.peaks.length))b.peaks=r.peaks;els.forEach(([el,x])=>{if(x===b)el.querySelectorAll(".wv .b").forEach(n=>{n.innerHTML=wave(b)})});kick()}catch(e){console.error(e);dat.busy=false}
 }
-function seekRow(b,f){
-  if(b!==cur){b._seek=f;load(b);return}
+function seekRow(b,f,el){
+  if(b!==cur){b._seek=f;load(b,el);return}
+  if(el!==curEl){curEl=el;rows()}
   const p=f*dd();if(audio)audio.currentTime=p;else t=p;
   if(!playing)play();kick();
 }
@@ -369,28 +370,11 @@ $("payBox").textContent="pay by card, Apple Pay or Google Pay on Stripe’s secu
 $("em").oninput=$("fn").oninput=$("ln").oninput=updateGo;
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){openCo(false);drawer($("drawer"),false);closeMenu()}});
 
-/* contact: scroll to bottom + highlight */
-$("contactLink").onclick=e=>{
-  e.preventDefault();
-  const m=$("msg"),calm=matchMedia("(prefers-reduced-motion:reduce)").matches;
-  const bottom=()=>document.documentElement.scrollHeight-window.innerHeight;
-  window.scrollTo({top:bottom(),behavior:calm?"auto":"smooth"});
-  let last=-1,n=0;
-  const iv=setInterval(()=>{ // wait for the scroll to settle, then make sure the message is fully in view
-    const y=window.scrollY;
-    if(Math.abs(y-last)<1||++n>40){
-      clearInterval(iv);
-      const r=m.getBoundingClientRect(),gap=r.bottom-(window.innerHeight-32);
-      if(gap>0)window.scrollBy({top:gap,behavior:"auto"});
-      m.classList.add("flash");setTimeout(()=>m.classList.remove("flash"),2600);
-    }
-    last=y;
-  },120);
-};
+$("yr").textContent=new Date().getFullYear();
 
 /* lists */
 const els=[];
-function rows(){$("bd").classList.toggle("on",!!bdCur&&bdCur===cur&&playing);els.forEach(([el,b])=>{el.classList.toggle("cur",b===cur);el.classList.toggle("on",b===cur&&playing);if(b!==cur)el.style.setProperty("--p",0)})}
+function rows(){$("bd").classList.toggle("on",!!bdCur&&bdCur===cur&&playing);els.forEach(([el])=>{const me=el===curEl;el.classList.toggle("cur",me);el.classList.toggle("on",me&&playing);if(!me)el.style.setProperty("--p",0)})}
 function wave(b){const pk=b.peaks&&b.peaks.length?b.peaks:seeded(b.name,48),n=48,o=[];
   for(let i=0;i<n;i++){const v=pk[Math.min(pk.length-1,Math.floor(i*pk.length/n))];o.push(`<i style="height:${Math.round(14+86*v)}%"></i>`)}return o.join("")}
 function mk(b){
@@ -400,9 +384,9 @@ function mk(b){
     <div><div class="t">${esc(b.name)}</div><div class="s2">${b.bpm} bpm</div></div></div>
     <div class="wv" aria-hidden="true"><div class="b">${W}</div><div class="f"><div class="b">${W}</div></div></div>
     <div class="rr"><span class="s bpm">${b.bpm} bpm</span><span class="price">$${b.price}</span><button class="add" data-n="${esc(b.slug)}"></button><button class="more" aria-label="more options for ${esc(b.name)}" aria-haspopup="menu">${DOTS}</button></div>`;
-  el.onclick=e=>{if(e.target.closest(".add,.more"))return;b===cur?(playing?pause():play()):load(b)};
+  el.onclick=e=>{if(e.target.closest(".add,.more"))return;if(b!==cur)return load(b,el);if(el!==curEl){curEl=el;rows();if(!playing)play();kick();return}playing?pause():play()};
   el.querySelector(".add").onclick=()=>toggleCart(b);
-  el.querySelector(".wv").onclick=e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();seekRow(b,Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)))};
+  el.querySelector(".wv").onclick=e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();seekRow(b,Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),el)};
   el.querySelector(".more").onclick=e=>{e.stopPropagation();openMenu(e.currentTarget,b)};
   els.push([el,b]);return el;
 }
