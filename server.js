@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const {
-  STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, ADMIN_PASSWORD,
+  STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, ADMIN_PASSWORD, STRIPE_PUBLISHABLE_KEY = "",
   FROM_EMAIL = "montemadethis <onboarding@resend.dev>",
   OWNER_EMAIL = "montemadeahit@gmail.com",
   PORT = 3000,
@@ -272,8 +272,9 @@ app.post("/api/checkout", async (req, res) => {
     if (gone.length) return res.status(400).json({ error: `not available right now: ${gone.map(b => b.name).join(", ")}` });
 
     const bundle = beats.length >= 2; // 2+ beats = 25% off every beat in the order
-    const session = await stripe.checkout.sessions.create({
+    const params = {
       mode: "payment",
+      payment_method_types: ["card", "us_bank_account"], // cards (incl. Apple/Google Pay) + US bank only
       customer_email: email,
       line_items: beats.map(b => ({
         quantity: 1,
@@ -282,9 +283,15 @@ app.post("/api/checkout", async (req, res) => {
       })),
       payment_intent_data: { receipt_email: email },
       metadata: { slugs: beats.map(b => b.slug).join(","), buyer: String(name || "").slice(0, 100) },
-      success_url: `${BASE_URL}/?paid=1`,
-      cancel_url: `${BASE_URL}/`,
-    });
+    };
+    if (STRIPE_PUBLISHABLE_KEY) { // payment form shown inside the site (embedded checkout)
+      const emb = { ...params, return_url: `${BASE_URL}/?paid=1` };
+      let session;
+      try { session = await stripe.checkout.sessions.create({ ...emb, ui_mode: "embedded_page" }); }
+      catch (e) { if (!/ui_mode/i.test(String(e?.message))) throw e; session = await stripe.checkout.sessions.create({ ...emb, ui_mode: "embedded" }); } // older Stripe API name
+      return res.json({ clientSecret: session.client_secret, publishableKey: STRIPE_PUBLISHABLE_KEY });
+    }
+    const session = await stripe.checkout.sessions.create({ ...params, success_url: `${BASE_URL}/?paid=1`, cancel_url: `${BASE_URL}/` });
     res.json({ url: session.url });
   } catch (e) {
     console.error("checkout error", e);
@@ -317,4 +324,3 @@ app.get("/beat/:slug", (req, res) => {
 app.get("/health", (_req, res) => res.send("ok"));
 
 app.listen(PORT, () => console.log(`montemadethis running on ${BASE_URL} (data: ${DATA_DIR})`));
-
