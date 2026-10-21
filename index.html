@@ -237,8 +237,7 @@ footer{margin-top:64px;border-top:1px solid var(--hair);padding:28px 0 calc(28px
       <h3>your details</h3>
       <div class="nm"><input class="em" id="fn" type="text" autocomplete="given-name" placeholder="first name" required><input class="em" id="ln" type="text" autocomplete="family-name" placeholder="last name" required></div>
       <input class="em" id="em" type="email" inputmode="email" autocomplete="email" placeholder="email" required>
-      <p class="note">required. your receipt and beats are sent to this email.</p>
-      <h3>payment</h3>
+      <p class="note" style="margin-bottom:22px">required. your receipt and beats are sent to this email.</p>
       <div class="pay-box" id="payBox"></div>
       <p class="pay-err" id="payErr" role="alert"></p>
       <a class="go" id="go" href="#">pay</a>
@@ -396,7 +395,7 @@ const money=c=>"$"+(c%100?(c/100).toFixed(2):c/100);
 function totals(it){const full=it.reduce((a,b)=>a+Math.round(b.price*100),0),bundle=it.length>=2,
   pay=it.reduce((a,b)=>a+Math.round(b.price*100*(bundle?.75:1)),0);return{full,pay,off:full-pay,bundle}}
 function renderCart(){
-  const it=items(),T=totals(it),dc=T.bundle?`<div class="it dc"><span>2+ beats: 25% off</span><span>−${money(T.off)}</span></div>`:"";
+  const it=items(),T=totals(it),dc=T.bundle?`<div class="it dc"><span>multi-beat discount: 25% off</span><span>−${money(T.off)}</span></div>`:"";
   $("cnt").textContent=$("bdCnt").textContent=it.length;$("total").textContent=$("total2").textContent=money(T.pay);
   $("items").innerHTML=it.length?it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}<button class="rm" data-n="${esc(b.slug)}">remove</button></span></div>`).join("")+dc:'<p class="empty">your cart is empty. tap add on any beat.</p>';
   $("sumItems").innerHTML=it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}</span></div>`).join("")+dc;
