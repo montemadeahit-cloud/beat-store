@@ -41,7 +41,7 @@ const getBeat = slug => { const b = DB.find(x => x.slug === slug); return b && d
 const allBeats = () => DB.map(decorate);
 const liveBeats = () => allBeats().filter(b => b.hasFull); // visible + sellable only when the full mp3 exists
 const publicBeat = b => ({
-  slug: b.slug, name: b.name, bpm: b.bpm, price: b.price, featured: !!b.featured,
+  slug: b.slug, name: b.name, genre: b.genre || "", bpm: b.bpm, price: b.price, featured: !!b.featured,
   peaks: Array.isArray(b.peaks) ? b.peaks : [],
   src: b.hasFull ? `/audio/${b.slug}.mp3?v=${Math.round(fs.statSync(fullPath(b.slug)).mtimeMs)}` : "",
 });
@@ -52,7 +52,7 @@ const TEMPLATE = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const ADMIN_PAGE = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
 function render(beat) {
   const title = beat ? `${beat.name} – montemadethis` : "montemadethis";
-  const desc = beat ? `${beat.name} · ${beat.bpm} bpm · $${beat.price}. preview and buy.` : "beats by montemadethis";
+  const desc = beat ? `${beat.name} · ${beat.genre ? beat.genre + " · " : ""}${beat.bpm} bpm · $${beat.price}. preview and buy.` : "beats by montemadethis";
   const url = BASE_URL + (beat ? `/beat/${beat.slug}` : "/");
   const og = [
     `<meta name="description" content="${esc(desc)}">`,
@@ -196,6 +196,7 @@ function cleanFields(body, partial) {
     out.price = price;
   }
   if (!partial || body.featured !== undefined) out.featured = !!body.featured;
+  if (!partial || body.genre !== undefined) out.genre = String(body.genre ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
   if (body.peaks !== undefined) {
     if (!Array.isArray(body.peaks) || body.peaks.length !== 48 || !body.peaks.every(v => typeof v === "number" && v >= 0 && v <= 1)) throw new Error("bad waveform data");
     out.peaks = body.peaks.map(v => Math.round(v * 100) / 100);
@@ -266,13 +267,14 @@ app.post("/api/checkout", async (req, res) => {
     const gone = beats.filter(b => !b.hasFull);
     if (gone.length) return res.status(400).json({ error: `not available right now: ${gone.map(b => b.name).join(", ")}` });
 
+    const bundle = beats.length >= 2; // 2+ beats = 25% off every beat in the order
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       customer_email: email,
       line_items: beats.map(b => ({
         quantity: 1,
-        price_data: { currency: "usd", unit_amount: Math.round(b.price * 100),
-          product_data: { name: b.name, description: `${b.bpm} bpm · mp3 download` } },
+        price_data: { currency: "usd", unit_amount: Math.round(b.price * 100 * (bundle ? 0.75 : 1)),
+          product_data: { name: b.name, description: `${b.bpm} bpm · mp3 download${bundle ? " · 25% off (2+ beats)" : ""}` } },
       })),
       payment_intent_data: { receipt_email: email },
       metadata: { slugs: beats.map(b => b.slug).join(","), buyer: String(name || "").slice(0, 100) },
