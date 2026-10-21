@@ -123,6 +123,8 @@ body.pad.mini{padding-bottom:80px}
 .dh{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--hair);font-weight:900;font-size:22px;letter-spacing:-.02em}
 .items{flex:1;overflow-y:auto;padding:4px 20px}
 .it{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid var(--hair)}
+.itl{display:flex;flex-direction:column;min-width:0;gap:2px}.itl .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.it .sub{color:var(--g);font-size:13px;line-height:1.35;opacity:.9}.it>span:last-child{white-space:nowrap;flex:none}
 .rm{background:none;border:0;color:var(--g);cursor:pointer;font-size:14px;padding:0;margin-left:12px}
 .rm:hover{color:var(--w)}
 .empty{color:var(--g);padding:24px 0}
@@ -381,14 +383,15 @@ function refreshAdd(){
   if(bdCur){const el=$("bdAdd");el.classList.toggle("in",has(bdCur));el.textContent=has(bdCur)?"in cart":"add to cart"}
 }
 const items=()=>cart.map(n=>BEATS.find(b=>b.slug===n)).filter(Boolean);
+const itemInfo=b=>`<div class="itl"><span class="t">${esc(b.name)}</span><span class="sub">prod. ${esc(b.prod||"montemadethis")}</span><span class="sub">${[b.genre,b.bpm+" bpm","mp3 download"].filter(Boolean).map(esc).join(" · ")}</span></div>`;
 const money=c=>"$"+(c%100?(c/100).toFixed(2):c/100);
 function totals(it){const full=it.reduce((a,b)=>a+Math.round(b.price*100),0),bundle=it.length>=2,
   pay=it.reduce((a,b)=>a+Math.round(b.price*100*(bundle?.75:1)),0);return{full,pay,off:full-pay,bundle}}
 function renderCart(){
   const it=items(),T=totals(it),dc=T.bundle?`<div class="it dc"><span>2+ beats: 25% off</span><span>−${money(T.off)}</span></div>`:"";
   $("cnt").textContent=$("bdCnt").textContent=it.length;$("total").textContent=$("total2").textContent=money(T.pay);
-  $("items").innerHTML=it.length?it.map(b=>`<div class="it"><span class="t">${esc(b.name)}</span><span>$${b.price}<button class="rm" data-n="${esc(b.slug)}">remove</button></span></div>`).join("")+dc:'<p class="empty">your cart is empty. tap add on any beat.</p>';
-  $("sumItems").innerHTML=it.map(b=>`<div class="it"><span class="t">${esc(b.name)}</span><span>$${b.price}</span></div>`).join("")+dc;
+  $("items").innerHTML=it.length?it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}<button class="rm" data-n="${esc(b.slug)}">remove</button></span></div>`).join("")+dc:'<p class="empty">your cart is empty. tap add on any beat.</p>';
+  $("sumItems").innerHTML=it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}</span></div>`).join("")+dc;
   $("toCo").setAttribute("aria-disabled",it.length?"false":"true");
   updateGo();
 }
