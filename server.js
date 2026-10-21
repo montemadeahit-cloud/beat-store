@@ -202,7 +202,7 @@ function cleanFields(body, partial) {
   if (!partial || body.coprod !== undefined) out.coprod = String(body.coprod ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   if (!partial || body.genre !== undefined) out.genre = String(body.genre ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
   if (body.peaks !== undefined) {
-    if (!Array.isArray(body.peaks) || body.peaks.length !== 48 || !body.peaks.every(v => typeof v === "number" && v >= 0 && v <= 1)) throw new Error("bad waveform data");
+    if (!Array.isArray(body.peaks) || ![48, 120].includes(body.peaks.length) || !body.peaks.every(v => typeof v === "number" && v >= 0 && v <= 1)) throw new Error("bad waveform data");
     out.peaks = body.peaks.map(v => Math.round(v * 100) / 100);
   }
   return out;
