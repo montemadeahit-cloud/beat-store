@@ -75,10 +75,16 @@ h2{font-weight:900;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.035em;line-
 .co-in{max-width:980px;margin:0 auto;padding:24px}
 .co .back{background:none;border:0;color:var(--g);cursor:pointer;padding:0;margin-bottom:18px;font-weight:500}
 .co .back:hover{color:var(--w)}
-.co-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:40px;align-items:start;margin-top:24px}
+.co-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start;margin-top:24px}
+.co-form{border:1px solid var(--hair);border-radius:14px;padding:24px}
 .co h3{font-size:18px;font-weight:900;letter-spacing:-.02em;margin:0 0 12px}
 .co-form h3:not(:first-child){margin-top:28px}
-.co-sum{border:1px solid var(--hair);border-radius:14px;padding:20px;position:sticky;top:24px}
+.co-sum{border:1px solid var(--hair);border-radius:14px;padding:24px;position:sticky;top:24px}
+.co h3 .s{font-weight:400;font-size:14px;letter-spacing:0;margin-left:6px}
+.sum-list{max-height:250px;overflow-y:auto;margin-right:-10px;padding-right:10px;scrollbar-width:thin;scrollbar-color:#7a7a7a #161616}
+.sum-list .it:last-child{border-bottom:0}#sumDc{border-top:1px solid var(--hair)}
+.sum-list.fade{-webkit-mask-image:linear-gradient(#000 65%,transparent);mask-image:linear-gradient(#000 65%,transparent)}
+.sum-list::-webkit-scrollbar{width:6px}.sum-list::-webkit-scrollbar-thumb{background:#7a7a7a;border-radius:6px}.sum-list::-webkit-scrollbar-track{background:#161616;border-radius:6px}
 .co-sum .tot{margin:14px 0 0}
 .pay-box{border:1px solid var(--hair);border-radius:12px;padding:16px;color:var(--g);margin-bottom:16px;font-size:15px}
 .pay-box:not(.live){display:none}
@@ -237,13 +243,13 @@ footer{margin-top:64px;border-top:1px solid var(--hair);padding:28px 0 calc(28px
       <h3>your details</h3>
       <div class="nm"><input class="em" id="fn" type="text" autocomplete="given-name" placeholder="first name" required><input class="em" id="ln" type="text" autocomplete="family-name" placeholder="last name" required></div>
       <input class="em" id="em" type="email" inputmode="email" autocomplete="email" placeholder="email" required>
-      <p class="note" style="margin-bottom:22px">required. your receipt and beats are sent to this email.</p>
+      <p class="note" style="margin-bottom:22px">after purchase, a receipt is sent to your email.</p>
       <div class="pay-box" id="payBox"></div>
       <p class="pay-err" id="payErr" role="alert"></p>
       <a class="go" id="go" href="#">pay</a>
       <p class="note" style="margin:12px 0 0;text-align:center">all sales are final. files are delivered instantly by email.</p>
     </div>
-    <aside class="co-sum"><h3>order summary</h3><div id="sumItems"></div><div class="tot"><span>total</span><span id="total2">$0</span></div></aside>
+    <aside class="co-sum"><h3>order summary<span class="s" id="sumCount"></span></h3><div class="sum-list" id="sumItems"></div><div id="sumDc"></div><div class="tot"><span>total</span><span id="total2">$0</span></div></aside>
   </div>
 </div></div>
 
@@ -391,6 +397,8 @@ function refreshAdd(){
 }
 const items=()=>cart.map(n=>BEATS.find(b=>b.slug===n)).filter(Boolean);
 const itemInfo=b=>`<div class="itl"><span class="t">${esc(b.name)}</span><span class="sub">prod. ${esc(b.prod||"montemadethis")}</span><span class="sub">${[b.genre,b.bpm+" bpm","mp3 download"].filter(Boolean).map(esc).join(" · ")}</span></div>`;
+const fadeSum=()=>{const l=$("sumItems");l.classList.toggle("fade",l.scrollTop+l.clientHeight<l.scrollHeight-4)};
+$("sumItems").addEventListener("scroll",fadeSum,{passive:true});
 const money=c=>"$"+(c%100?(c/100).toFixed(2):c/100);
 function totals(it){const full=it.reduce((a,b)=>a+Math.round(b.price*100),0),bundle=it.length>=2,
   pay=it.reduce((a,b)=>a+Math.round(b.price*100*(bundle?.75:1)),0);return{full,pay,off:full-pay,bundle}}
@@ -398,7 +406,9 @@ function renderCart(){
   const it=items(),T=totals(it),dc=T.bundle?`<div class="it dc"><span>multi-beat discount: 25% off</span><span>−${money(T.off)}</span></div>`:"";
   $("cnt").textContent=$("bdCnt").textContent=it.length;$("total").textContent=$("total2").textContent=money(T.pay);
   $("items").innerHTML=it.length?it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}<button class="rm" data-n="${esc(b.slug)}">remove</button></span></div>`).join("")+dc:'<p class="empty">your cart is empty. tap add on any beat.</p>';
-  $("sumItems").innerHTML=it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}</span></div>`).join("")+dc;
+  $("sumItems").innerHTML=it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}</span></div>`).join("");$("sumDc").innerHTML=dc;
+  fadeSum();
+  $("sumCount").textContent=it.length?`· ${it.length} beat${it.length>1?"s":""}`:"";
   $("toCo").setAttribute("aria-disabled",it.length?"false":"true");
   updateGo();
 }
@@ -442,7 +452,7 @@ function unmountPay(){
   $("go").hidden=false;["fn","ln","em"].forEach(i=>$(i).disabled=false);updateGo();
 }
 addEventListener("pageshow",()=>{busy=false;updateGo()});
-function openCo(v){if(!v)unmountPay();$("co").hidden=!v;document.body.style.overflow=v?"hidden":"";if(v)$("co").scrollTop=0}
+function openCo(v){if(!v)unmountPay();$("co").hidden=!v;if(v)requestAnimationFrame(fadeSum);document.body.style.overflow=v?"hidden":"";if(v)$("co").scrollTop=0}
 function drawer(el,v){el.classList.toggle("open",v);$("ov").classList.toggle("open",v)}
 $("cartBtn").onclick=()=>drawer($("drawer"),true);
 $("cx").onclick=()=>drawer($("drawer"),false);
