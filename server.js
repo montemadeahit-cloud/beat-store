@@ -208,6 +208,16 @@ function cleanFields(body, partial) {
   return out;
 }
 
+/* max 5 featured: featuring a 6th bumps the one featured longest ago */
+const MAX_FEATURED = 5;
+function applyFeatured(b, wasFeatured) {
+  if (b.featured && !wasFeatured) b.featuredAt = Date.now();
+  if (!b.featured) delete b.featuredAt;
+  const on = DB.filter(x => x.featured).sort((x, y) => (x.featuredAt || x.added || 0) - (y.featuredAt || y.added || 0));
+  const bumped = [];
+  while (on.length > MAX_FEATURED) { const old = on.shift(); if (old === b) { on.push(old); continue; } old.featured = false; delete old.featuredAt; bumped.push(old.name); }
+  return bumped;
+}
 app.get("/api/admin/beats", requireAdmin, (_req, res) => res.json(allBeats()));
 app.post("/api/admin/beats", requireAdmin, (req, res) => {
   try {
@@ -215,15 +225,17 @@ app.post("/api/admin/beats", requireAdmin, (req, res) => {
     const base = slugify(f.name) || "beat";
     let slug = base, i = 2;
     while (DB.some(b => b.slug === slug)) slug = `${base}-${i++}`;
-    DB.unshift({ slug, ...f, added: Date.now() }); // newest first
+    const nb = { slug, ...f, added: Date.now() };
+    DB.unshift(nb); // newest first
+    const bumped = applyFeatured(nb, false);
     saveDB();
-    res.json(getBeat(slug));
+    res.json({ ...getBeat(slug), bumped });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.patch("/api/admin/beats/:slug", requireAdmin, (req, res) => {
   const b = DB.find(x => x.slug === req.params.slug);
   if (!b) return res.status(404).json({ error: "beat not found" });
-  try { Object.assign(b, cleanFields(req.body || {}, true)); saveDB(); res.json(getBeat(b.slug)); }
+  try { const was = !!b.featured; Object.assign(b, cleanFields(req.body || {}, true)); const bumped = applyFeatured(b, was); saveDB(); res.json({ ...getBeat(b.slug), bumped }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.delete("/api/admin/beats/:slug", requireAdmin, (req, res) => {
