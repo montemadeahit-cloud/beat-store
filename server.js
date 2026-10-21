@@ -41,7 +41,7 @@ const getBeat = slug => { const b = DB.find(x => x.slug === slug); return b && d
 const allBeats = () => DB.map(decorate);
 const liveBeats = () => allBeats().filter(b => b.hasFull); // visible + sellable only when the full mp3 exists
 const publicBeat = b => ({
-  slug: b.slug, name: b.name, genre: b.genre || "", bpm: b.bpm, price: b.price, featured: !!b.featured,
+  slug: b.slug, name: b.name, genre: b.genre || "", prod: producers(b).join(" x "), bpm: b.bpm, price: b.price, featured: !!b.featured,
   peaks: Array.isArray(b.peaks) ? b.peaks : [],
   src: b.hasFull ? `/audio/${b.slug}.mp3?v=${Math.round(fs.statSync(fullPath(b.slug)).mtimeMs)}` : "",
 });
@@ -72,7 +72,9 @@ function render(beat) {
 /* ---------- signed download links (valid 30 days) ---------- */
 const sign = (slug, order, exp) =>
   crypto.createHmac("sha256", STRIPE_WEBHOOK_SECRET || "dev").update(`${slug}.${order}.${exp}`).digest("hex");
-const safeName = n => n.replace(/[^\w\- ]+/g, "").trim() || "beat";
+const safeName = n => n.replace(/[^\w\- ().,&]+/g, "").replace(/\s+/g, " ").trim() || "beat";
+const producers = b => ["montemadethis", ...String(b.coprod || "").split(/\s*(?:,|\sx\s|&)\s*/).map(s => s.trim()).filter(Boolean)];
+const fileName = b => safeName(`${b.name} (prod. ${producers(b).join(" x ")})`) + ".mp3"; // credits travel with the file
 
 /* ---------- fulfillment: email the buyer their mp3s ---------- */
 async function fulfill(session) {
@@ -86,21 +88,22 @@ async function fulfill(session) {
   const totalBytes = files.reduce((n, f) => n + (fs.existsSync(f.file) ? fs.statSync(f.file).size : 0), 0);
   const attach = totalBytes <= 25 * 1024 * 1024; // email providers cap around 40MB
   const attachments = attach
-    ? files.filter(f => fs.existsSync(f.file)).map(f => ({ filename: safeName(f.b.name) + ".mp3", content: fs.readFileSync(f.file) }))
+    ? files.filter(f => fs.existsSync(f.file)).map(f => ({ filename: fileName(f.b), content: fs.readFileSync(f.file) }))
     : [];
 
   const links = beats.map(b =>
-    `<li><a href="${BASE_URL}/download/${b.slug}?o=${encodeURIComponent(session.id)}&e=${exp}&sig=${sign(b.slug, session.id, exp)}">download ${esc(b.name)}.mp3</a></li>`).join("");
+    `<li><a href="${BASE_URL}/download/${b.slug}?o=${encodeURIComponent(session.id)}&e=${exp}&sig=${sign(b.slug, session.id, exp)}">download ${esc(fileName(b))}</a></li>`).join("");
   const names = beats.map(b => esc(b.name)).join(", ");
   const one = beats.length === 1;
 
+  const titles = beats.map(b => `"${b.name}" (${b.bpm} bpm)`).join(", ");
   const { error } = await resend.emails.send({
     from: FROM_EMAIL, to, replyTo: OWNER_EMAIL,
-    subject: one ? `here is your beat: ${beats[0].name}` : `here are your beats: ${beats.map(b => b.name).join(", ")}`,
+    subject: `Thank you for your purchase: ${titles} ${one ? "is" : "are"} available for download`,
     html: `<div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">
       <p>${first ? `hey ${first},` : "hey,"}</p>
-      <p>here ${one ? "is your beat" : "are your beats"}: <b>${names}</b></p>
-      <p>thank you for purchasing.</p>
+      <p>thank you for purchasing. ${attach ? `attached below ${one ? "is your beat" : "are your beats"}` : `${one ? "your beat is" : "your beats are"} ready to download below`}: <b>${names}</b></p>
+      <p>must credit <b>(prod. montemadethis)</b> &amp; any producers listed in the file name, and add proper splits when uploading for profit on any streaming service.</p>
       <p>${attach ? `your mp3${one ? " is" : "s are"} attached. ` : "the files were too large to attach, so use the links below. "}you can also re-download any time in the next 30 days:</p>
       <ul>${links}</ul>
       <p>questions? just reply to this email.</p>
@@ -196,6 +199,7 @@ function cleanFields(body, partial) {
     out.price = price;
   }
   if (!partial || body.featured !== undefined) out.featured = !!body.featured;
+  if (!partial || body.coprod !== undefined) out.coprod = String(body.coprod ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   if (!partial || body.genre !== undefined) out.genre = String(body.genre ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
   if (body.peaks !== undefined) {
     if (!Array.isArray(body.peaks) || body.peaks.length !== 48 || !body.peaks.every(v => typeof v === "number" && v >= 0 && v <= 1)) throw new Error("bad waveform data");
@@ -295,7 +299,7 @@ app.get("/download/:slug", (req, res) => {
   if (!b || !b.hasFull || !o || !e || !sig || Date.now() > Number(e)) return bad();
   const good = sign(b.slug, String(o), String(e)), got = String(sig);
   if (got.length !== good.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(good))) return bad();
-  res.download(fullPath(b.slug), safeName(b.name) + ".mp3");
+  res.download(fullPath(b.slug), fileName(b));
 });
 
 /* ---------- pages + preview audio ---------- */
