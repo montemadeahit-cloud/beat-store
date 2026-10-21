@@ -100,7 +100,7 @@ const bumpMsg=r=>r.bumped&&r.bumped.length?` · "${r.bumped.join('", "')}" was s
 const fileOk=f=>f&&/\.mp3$/i.test(f.name);
 async function peaksOf(buf){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
-  const ch=ab.getChannelData(0),n=48,per=Math.floor(ch.length/n),pk=[];
+  const ch=ab.getChannelData(0),n=120,per=Math.floor(ch.length/n),pk=[];
   for(let i=0;i<n;i++){let m=0;const st=Math.max(1,per>>8);for(let j=i*per;j<(i+1)*per;j+=st){const v=Math.abs(ch[j]);if(v>m)m=v}pk.push(m)}
   const mx=Math.max(...pk)||1;return pk.map(v=>Math.round(Math.min(1,Math.max(.08,Math.pow(v/mx,.75)))*100)/100);
 }
@@ -108,7 +108,7 @@ async function savePeaks(slug,file){try{await api("PATCH","/api/admin/beats/"+sl
 let filling=false;
 async function backfill(beats){ // beats uploaded before waveforms existed get one automatically
   if(filling)return;filling=true;
-  for(const b of beats){if(b.hasFull&&!(b.peaks&&b.peaks.length)){
+  for(const b of beats){if(b.hasFull&&!(b.peaks&&b.peaks.length>=120)){
     try{const r=await fetch("/audio/"+b.slug+".mp3");await api("PATCH","/api/admin/beats/"+b.slug,{peaks:await peaksOf(await r.arrayBuffer())})}catch(e){console.error("waveform",e)}}}
   filling=false;
 }
