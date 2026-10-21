@@ -103,7 +103,7 @@ async function fulfill(session) {
     html: `<div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#111">
       <p>${first ? `hey ${first},` : "hey,"}</p>
       <p>thank you for purchasing. ${attach ? `attached below ${one ? "is your beat" : "are your beats"}` : `${one ? "your beat is" : "your beats are"} ready to download below`}: <b>${names}</b></p>
-      <p>must credit <b>(prod. montemadethis)</b> &amp; any producers listed in the file name; must provide proper splits when uploading for profit on any streaming service.</p>
+      <p>must credit <b>(prod. montemadethis)</b> &amp; any producers listed in the file name<br>must provide proper splits when uploading for profit on any streaming service</p>
       <p>${attach ? `your mp3${one ? " is" : "s are"} attached. ` : "the files were too large to attach, so use the links below. "}you can also re-download any time in the next 30 days:</p>
       <ul>${links}</ul>
       <p>questions? just reply to this email.</p>
