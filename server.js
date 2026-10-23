@@ -35,6 +35,15 @@ const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(
 let DB = [];
 try { DB = JSON.parse(fs.readFileSync(CATALOG, "utf8")); } catch { DB = []; }
 const saveDB = () => { fs.writeFileSync(CATALOG + ".tmp", JSON.stringify(DB, null, 2)); fs.renameSync(CATALOG + ".tmp", CATALOG); };
+
+/* ---------- listening stats per beat: listens, adds to cart, seconds listened (stored next to beats.json) ---------- */
+const STATS_FILE = path.join(DATA_DIR, "stats.json");
+let STATS = {}; try { STATS = JSON.parse(fs.readFileSync(STATS_FILE, "utf8")); } catch { STATS = {}; }
+let statsDirty = false;
+const saveStats = () => { if (!statsDirty) return; statsDirty = false; fs.writeFile(STATS_FILE + ".tmp", JSON.stringify(STATS), e => { if (!e) fs.rename(STATS_FILE + ".tmp", STATS_FILE, () => {}); }); };
+setInterval(saveStats, 10000).unref();
+for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { if (statsDirty) { try { fs.writeFileSync(STATS_FILE, JSON.stringify(STATS)); } catch {} } process.exit(0); });
+const statOf = slug => STATS[slug] || (STATS[slug] = { plays: 0, adds: 0, secs: 0, since: Date.now() });
 const fullPath = slug => path.join(FULL_DIR, slug + ".mp3");
 const decorate = b => ({ ...b, hasFull: fs.existsSync(fullPath(b.slug)) });
 const getBeat = slug => { const b = DB.find(x => x.slug === slug); return b && decorate(b); };
@@ -418,7 +427,7 @@ app.get("/api/admin/printful/variants", requireAdmin, async (_req, res) => {
     res.json(out);
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
-app.get("/api/admin/beats", requireAdmin, (_req, res) => res.json(allBeats()));
+app.get("/api/admin/beats", requireAdmin, (_req, res) => res.json(allBeats().map(b => ({ ...b, stats: STATS[b.slug] || { plays: 0, adds: 0, secs: 0 } }))));
 app.post("/api/admin/beats", requireAdmin, (req, res) => {
   try {
     const f = cleanFields(req.body || {}, false);
@@ -442,6 +451,7 @@ app.delete("/api/admin/beats/:slug", requireAdmin, (req, res) => {
   const i = DB.findIndex(x => x.slug === req.params.slug);
   if (i < 0) return res.status(404).json({ error: "beat not found" });
   const [b] = DB.splice(i, 1); saveDB();
+  if (STATS[b.slug]) { delete STATS[b.slug]; statsDirty = true; }
   for (const p of [fullPath(b.slug)]) fs.rm(p, { force: true }, () => {});
   res.json({ ok: true });
 });
@@ -469,6 +479,24 @@ app.put("/api/admin/beats/:slug/:kind", requireAdmin, (req, res) => {
     res.json({ ok: true, beat: getBeat(slug) });
   });
   req.pipe(out);
+});
+
+/* ---------- stats reports from the site (your own activity while logged in is ignored) ---------- */
+const statHits = new Map(); // ip -> {n, reset}: light limit so nobody can spam numbers
+app.post("/api/stat", (req, res) => {
+  res.sendStatus(204);
+  if (isAdmin(req)) return;
+  const h = statHits.get(req.ip) || { n: 0, reset: Date.now() + 60000 };
+  if (Date.now() > h.reset) { h.n = 0; h.reset = Date.now() + 60000; }
+  if (++h.n > 120) return; statHits.set(req.ip, h);
+  const { ev, slug, secs } = req.body || {};
+  if (typeof slug !== "string" || !DB.some(b => b.slug === slug)) return;
+  const st = statOf(slug);
+  if (ev === "play") st.plays++;
+  else if (ev === "add") st.adds++;
+  else if (ev === "time") st.secs += Math.max(0, Math.min(120, Math.round(Number(secs) || 0)));
+  else return;
+  statsDirty = true;
 });
 
 /* ---------- checkout (prices come from the catalog, never from the browser) ---------- */
