@@ -431,12 +431,20 @@ function frame(ts){
 }
 function kick(){cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
 function setPlaying(v){playing=v;$("pl").classList.toggle("playing",v);rows();last=performance.now();kick()}
-function pause(){if(audio)audio.pause();setPlaying(false)}
+/* listening stats: listens, adds to cart, seconds actually heard (skipping around doesn't count) */
+const HEARD={};
+function stat(ev,slug,extra){try{const body=JSON.stringify({ev,slug,...extra});if(navigator.sendBeacon&&navigator.sendBeacon("/api/stat",new Blob([body],{type:"application/json"})))return;fetch("/api/stat",{method:"POST",headers:{"Content-Type":"application/json"},body,keepalive:true}).catch(()=>{})}catch(e){}}
+function flushHeard(){for(const k in HEARD){const n=Math.floor(HEARD[k]);if(n>=1){stat("time",k,{secs:n});HEARD[k]-=n}}}
+setInterval(flushHeard,15000);addEventListener("pagehide",flushHeard);document.addEventListener("visibilitychange",()=>{if(document.hidden)flushHeard()});
+function pause(){if(audio)audio.pause();setPlaying(false);flushHeard()}
 function play(){if(audio)audio.play().catch(()=>setPlaying(false));setPlaying(true)}
 const rowFor=b=>(els.find(([e,x])=>x===b&&e.parentNode===$("list"))||els.find(([e,x])=>x===b)||[null])[0];
 function load(b,el){
   pause();audio=null;cur=b;curEl=el||rowFor(b);t=0;level=0;
-  if(b.src){audio=new Audio(b.src);audio.onended=()=>setPlaying(false);audio.onloadedmetadata=()=>{if(b._seek!=null){audio.currentTime=b._seek*audio.duration;b._seek=null}kick()}}else if(b._seek!=null){t=b._seek*dur;b._seek=null}
+  if(b.src){audio=new Audio(b.src);audio.onended=()=>{setPlaying(false);flushHeard()};
+    stat("play",b.slug);let lastT=0;const a=audio;
+    a.addEventListener("timeupdate",()=>{const d=a.currentTime-lastT;lastT=a.currentTime;if(d>0&&d<1.5&&!a.paused)HEARD[b.slug]=(HEARD[b.slug]||0)+d});
+    a.addEventListener("seeking",()=>{lastT=a.currentTime});audio.onloadedmetadata=()=>{if(b._seek!=null){audio.currentTime=b._seek*audio.duration;b._seek=null}kick()}}else if(b._seek!=null){t=b._seek*dur;b._seek=null}
   $("pn").textContent=b.name;$("pm").textContent=b.bpm+" bpm";
   $("pl").classList.add("open");document.body.classList.add("pad");
   sizeWf();refreshAdd();analyze(b);play();
@@ -486,7 +494,7 @@ setMini(mini);
 /* cart */
 const has=b=>cart.includes(b.slug);
 const save=()=>{try{localStorage.setItem("mmt_cart",JSON.stringify(cart))}catch(e){}};
-function toggleCart(b){cart=has(b)?cart.filter(n=>n!==b.slug):[...cart,b.slug];save();refreshAdd();renderCart()}
+function toggleCart(b){if(!has(b))stat("add",b.slug);cart=has(b)?cart.filter(n=>n!==b.slug):[...cart,b.slug];save();refreshAdd();renderCart()}
 function refreshAdd(){
   document.querySelectorAll(".add[data-n]").forEach(el=>{const b=BEATS.find(x=>x.slug===el.dataset.n);if(!b)return;el.classList.toggle("in",has(b));el.textContent=has(b)?"in cart":"add"});
   if(cur){const el=$("pa");el.classList.toggle("in",has(cur));el.textContent=has(cur)?"in cart":"add"}
