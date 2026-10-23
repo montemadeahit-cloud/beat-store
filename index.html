@@ -36,6 +36,7 @@ section{padding:41px 0 18px}
 .promo{text-align:center;padding:74px 0 0}
 .promo h2{font-size:clamp(41px,6.9vw,69px);letter-spacing:-.04em;margin:0 0 12px}
 .intro p,.promo p{text-wrap:balance}
+.intro h1{margin-bottom:12px}.intro.contact{padding:28px 0 0}
 .promo p{margin:0;color:var(--g);font-size:14px;opacity:.8}
 .tabs{display:flex;gap:24px;align-items:baseline;flex-wrap:wrap}
 .tab{background:none;border:0;padding:0;cursor:pointer;font-weight:900;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.035em;line-height:.9;color:#5a5a5a;transition:color .2s}
@@ -234,9 +235,10 @@ main{padding-bottom:72px}
 </div></header>
 
 <main id="top"><div class="wrap">
-  <div class="intro"><h1>shop beats</h1><p id="msg">for all inquiries &amp; custom work, please email me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
+  <div class="intro"><h1>shop beats</h1></div>
   <section id="featSec"><div class="head tabs" role="tablist"><button class="tab on" id="tabF" role="tab" aria-selected="true" aria-controls="feat">featured</button><button class="tab" id="tabA" role="tab" aria-selected="false" aria-controls="list">catalog</button><div class="fwrap" id="fwrap" hidden><button class="fbtn" id="fbtn" aria-haspopup="true" aria-expanded="false"><span id="flab">filter by genre</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><div class="fmenu" id="fmenu" role="menu" hidden></div></div></div>
     <div class="fbox" id="feat" role="tabpanel"></div><div class="list" id="list" role="tabpanel" hidden></div></section>
+  <div class="intro contact"><p id="msg">for all inquiries &amp; custom work, please email me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
   <div class="promo" id="promo"><h2>need more?</h2><p>purchase 2 or more beats for 25% off your cart</p></div>
 </div></main>
 
@@ -487,7 +489,7 @@ $("contactLink").onclick=e=>{
   e.preventDefault();
   const m=$("msg"),calm=matchMedia("(prefers-reduced-motion:reduce)").matches;
   if($("bd").hidden===false)closeBeat();
-  window.scrollTo({top:0,behavior:calm?"auto":"smooth"});
+  const r=m.getBoundingClientRect();window.scrollTo({top:Math.max(0,scrollY+r.top-innerHeight/2+r.height/2),behavior:calm?"auto":"smooth"});
   let last=-1,n=0;
   const iv=setInterval(()=>{ // wait for the scroll to settle, then flash
     const y=window.scrollY;
