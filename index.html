@@ -219,6 +219,7 @@ main{padding-bottom:72px}
 /* graphic tees (visual preview) */
 .tees{padding:72px 0 0}.tees[hidden]{display:none}
 .tees .intro{padding:0 0 28px}
+.pvw{display:inline-block;margin:6px 0 0;padding:5px 12px;border:1px dashed rgba(255,255,255,.35);border-radius:999px;color:var(--g);font-size:13px}.pvw[hidden]{display:none}
 .tc-wrap{position:relative}
 .tee.on{opacity:1;transform:none;cursor:default}
 main{overflow-x:clip}
@@ -271,7 +272,7 @@ main{overflow-x:clip}
     <div class="fbox" id="feat" role="tabpanel"></div><div class="list" id="list" role="tabpanel" hidden></div></section>
   <div class="intro contact"><p id="msg">for all inquiries &amp; custom work, please email me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
   <section class="tees" id="tees">
-    <div class="intro"><h1>shop graphic tees</h1></div>
+    <div class="intro"><h1>shop graphic tees</h1><p class="pvw" id="teePvw" hidden>preview · only you can see this (logged in as admin)</p></div>
     <div class="tc-wrap"><div class="tc" id="teeTrack"></div>
       <div class="tc-nav"><div class="tc-dots" id="tcDots"></div>
         <div class="tc-arr"><button id="tcPrev" aria-label="previous tee"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><button id="tcNext" aria-label="next tee"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button></div></div></div>
@@ -338,7 +339,7 @@ main{overflow-x:clip}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const BEATS=JSON.parse($("catalog").textContent);
-const SHOP=(()=>{try{const x=JSON.parse($("shop").textContent);return{tees:x.tees||[],shipping:+x.shipping||0}}catch(e){return{tees:[],shipping:0}}})(); // tees come from tees.json (off = empty)
+const SHOP=(()=>{try{const x=JSON.parse($("shop").textContent);return{tees:x.tees||[],shipping:+x.shipping||0,preview:!!x.preview}}catch(e){return{tees:[],shipping:0}}})(); // tees come from tees.json (off = empty)
 const TEES=SHOP.tees,teeOf=id=>TEES.find(t=>t.id===id);
 const validEntry=n=>{if(!String(n).startsWith("tee:"))return BEATS.some(b=>b.slug===n);const[,id,size]=n.split(":"),t=teeOf(id);return!!t&&t.buyable.includes(size)};
 const PLAY='<svg class="pl" viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg><svg class="pa" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
@@ -615,6 +616,7 @@ document.addEventListener("pointermove",e=>{
 
 /* graphic tees: data comes from tees.json on the server. section shows only when tees are switched on */
 const SHOW_TEES=TEES.length>0;
+if(SHOP.preview)$("teePvw").hidden=false;
 function teeSvg(t){
   const prints={
     wordmark:`<text x="150" y="128" text-anchor="middle" font-family="Archivo,Helvetica,Arial,sans-serif" font-weight="900" font-size="17" letter-spacing="-.6" fill="${t.ink}">montemadethis.</text>`,
