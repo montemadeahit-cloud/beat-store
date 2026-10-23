@@ -373,6 +373,12 @@ app.get("/beat/:slug", (req, res) => {
   const b = getBeat(req.params.slug);
   b && b.hasFull ? res.set("Cache-Control", "no-cache").type("html").send(render(b)) : res.redirect("/");
 });
+/* product photos: image files placed next to server.js, served at /img/<name> */
+app.get("/img/:file", (req, res) => {
+  const f = req.params.file;
+  if (!/^[\w-]+\.(png|jpe?g|webp)$/i.test(f) || !fs.existsSync(path.join(ROOT, f))) return res.sendStatus(404);
+  res.sendFile(path.join(ROOT, f), { headers: { "Cache-Control": "public, max-age=86400" } });
+});
 app.get("/email-logo.png", (_req, res) => HAS_LOGO ? res.sendFile(LOGO_FILE, { headers: { "Cache-Control": "public, max-age=86400", "Content-Type": "image/png" } }) : res.sendStatus(404));
 app.get("/health", (_req, res) => res.send("ok"));
 
