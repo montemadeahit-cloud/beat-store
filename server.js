@@ -59,7 +59,7 @@ const TEE_SHOP = {
     {
       "id": "tee001",
       "name": "test product tee 001",
-      "sub": "white · heavyweight cotton",
+      "sub": "100% cotton · heavyweight 6.5 oz",
       "price": 35,
       "image": "tee-eye.jpg",
       "sizes": {
@@ -68,12 +68,19 @@ const TEE_SHOP = {
         "L": "",
         "XL": "",
         "2XL": ""
-      }
+      },
+      "desc": "a heavyweight 6.5 oz tee in 100% cotton, printed to order just for you and shipped straight to your door.",
+      "details": [
+        "100% cotton",
+        "heavyweight 6.5 oz",
+        "printed to order",
+        "sizes S–2XL"
+      ]
     },
     {
       "id": "tee002",
       "name": "test product tee 002",
-      "sub": "white · heavyweight cotton",
+      "sub": "100% cotton · heavyweight 6.5 oz",
       "price": 35,
       "image": "tee-bigben.jpg",
       "sizes": {
@@ -82,12 +89,19 @@ const TEE_SHOP = {
         "L": "",
         "XL": "",
         "2XL": ""
-      }
+      },
+      "desc": "a heavyweight 6.5 oz tee in 100% cotton, printed to order just for you and shipped straight to your door.",
+      "details": [
+        "100% cotton",
+        "heavyweight 6.5 oz",
+        "printed to order",
+        "sizes S–2XL"
+      ]
     },
     {
       "id": "tee003",
       "name": "test product tee 003",
-      "sub": "white · heavyweight cotton",
+      "sub": "100% cotton · heavyweight 6.5 oz",
       "price": 35,
       "image": "tee-divinity.jpg",
       "sizes": {
@@ -96,9 +110,17 @@ const TEE_SHOP = {
         "L": "",
         "XL": "",
         "2XL": ""
-      }
+      },
+      "desc": "a heavyweight 6.5 oz tee in 100% cotton, printed to order just for you and shipped straight to your door.",
+      "details": [
+        "100% cotton",
+        "heavyweight 6.5 oz",
+        "printed to order",
+        "sizes S–2XL"
+      ]
     }
-  ]
+  ],
+  "blank_note": "internal only, never shown: Los Angeles Apparel 6.5 oz heavyweight 100% cotton tee"
 };
 function teesConfig() { return { ...TEE_SHOP, tees: Array.isArray(TEE_SHOP.tees) ? TEE_SHOP.tees : [] }; }
 const teesOn = () => { const env = process.env.TEES_ENABLED; return env !== undefined && env !== "" ? /^(1|true|on|yes)$/i.test(env) : !!teesConfig().enabled; };
@@ -106,7 +128,7 @@ const buyable = t => Object.entries(t.sizes || {}).filter(([, v]) => String(v ??
 const shipUsd = () => Math.max(0, Number(teesConfig().shipping_usd) || 0);
 const publicShop = (preview = false) => !(teesOn() || preview) ? { tees: [], shipping: 0 } : { // preview = logged-in admin sees tees even while off
   preview: !teesOn(), shipping: shipUsd(),
-  tees: teesConfig().tees.map(t => ({ id: String(t.id), name: t.name, sub: t.sub || "", price: Number(t.price), img: t.image ? `/img/${t.image}` : "", sizes: Object.keys(t.sizes || {}), buyable: buyable(t) })),
+  tees: teesConfig().tees.map(t => ({ id: String(t.id), name: t.name, sub: t.sub || "", desc: t.desc || "", details: Array.isArray(t.details) ? t.details : [], price: Number(t.price), img: t.image ? `/img/${t.image}` : "", sizes: Object.keys(t.sizes || {}), buyable: buyable(t) })),
 };
 const parseTeeMeta = m => String(m || "").split(",").filter(Boolean).map(x => { const [id, size, qty] = x.split(":"); return { id, size, qty: Math.max(1, Number(qty) || 1) }; });
 
@@ -114,10 +136,11 @@ const parseTeeMeta = m => String(m || "").split(",").filter(Boolean).map(x => { 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const TEMPLATE = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const ADMIN_PAGE = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
-function render(beat, req) {
-  const title = beat ? `${beat.name} – montemadethis` : "montemadethis";
-  const desc = beat ? `${beat.name} · ${beat.genre ? beat.genre + " · " : ""}${beat.bpm} bpm · $${beat.price}. preview and buy.` : "beats by montemadethis";
-  const url = BASE_URL + (beat ? `/beat/${beat.slug}` : "/");
+function render(beat, req, tee) {
+  const title = beat ? `${beat.name} – montemadethis` : tee ? `${tee.name} – montemadethis` : "montemadethis";
+  const desc = beat ? `${beat.name} · ${beat.genre ? beat.genre + " · " : ""}${beat.bpm} bpm · $${beat.price}. preview and buy.`
+    : tee ? `${tee.name} · $${tee.price} · ${tee.sub || "graphic tee"}` : "beats by montemadethis";
+  const url = BASE_URL + (beat ? `/beat/${beat.slug}` : tee ? `/tee/${tee.id}` : "/");
   const og = [
     `<meta name="description" content="${esc(desc)}">`,
     `<meta property="og:type" content="website">`,
@@ -125,7 +148,8 @@ function render(beat, req) {
     `<meta property="og:title" content="${esc(title)}">`,
     `<meta property="og:description" content="${esc(desc)}">`,
     `<meta property="og:url" content="${esc(url)}">`,
-    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:card" content="${tee && tee.image ? "summary_large_image" : "summary"}">`,
+    ...(tee && tee.image ? [`<meta property="og:image" content="${esc(BASE_URL + "/img/" + tee.image)}">`] : []),
   ].join("\n");
   return TEMPLATE
     .replace("__TITLE__", () => esc(title))
@@ -542,6 +566,10 @@ app.get("/img/:file", (req, res) => {
   res.sendFile(path.join(ROOT, f), { headers: { "Cache-Control": "public, max-age=86400" } });
 });
 app.get("/email-logo.png", (_req, res) => HAS_LOGO ? res.sendFile(LOGO_FILE, { headers: { "Cache-Control": "public, max-age=86400", "Content-Type": "image/png" } }) : res.sendStatus(404));
+app.get("/tee/:id", (req, res) => { // shirt pages (visible when tees are on, or to you while logged in)
+  const t = teesConfig().tees.find(x => String(x.id) === req.params.id);
+  t && (teesOn() || isAdmin(req)) ? res.set("Cache-Control", "no-cache").type("html").send(render(null, req, t)) : res.redirect("/");
+});
 app.get("/health", (_req, res) => res.send("ok"));
 
 app.listen(PORT, () => console.log(`montemadethis running on ${BASE_URL} (data: ${DATA_DIR})`));
