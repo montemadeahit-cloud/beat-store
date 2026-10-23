@@ -235,7 +235,7 @@ main{padding-bottom:72px}
 
 <main id="top"><div class="wrap">
   <div class="intro"><h1>shop beats</h1><p id="msg">for all inquiries &amp; custom work, please email me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
-  <section id="featSec"><div class="head tabs" role="tablist"><button class="tab on" id="tabF" role="tab" aria-selected="true" aria-controls="feat">featured</button><button class="tab" id="tabA" role="tab" aria-selected="false" aria-controls="list">catalog</button><div class="fwrap" id="fwrap" hidden><button class="fbtn" id="fbtn" aria-haspopup="true" aria-expanded="false"><span id="flab">filter</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><div class="fmenu" id="fmenu" role="menu" hidden></div></div></div>
+  <section id="featSec"><div class="head tabs" role="tablist"><button class="tab on" id="tabF" role="tab" aria-selected="true" aria-controls="feat">featured</button><button class="tab" id="tabA" role="tab" aria-selected="false" aria-controls="list">catalog</button><div class="fwrap" id="fwrap" hidden><button class="fbtn" id="fbtn" aria-haspopup="true" aria-expanded="false"><span id="flab">filter by genre</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><div class="fmenu" id="fmenu" role="menu" hidden></div></div></div>
     <div class="fbox" id="feat" role="tabpanel"></div><div class="list" id="list" role="tabpanel" hidden></div></section>
   <div class="promo" id="promo"><h2>need more?</h2><p>purchase 2 or more beats for 25% off your cart</p></div>
 </div></main>
@@ -413,10 +413,11 @@ const itemInfo=b=>`<div class="itl"><span class="t">${esc(b.name)}</span><span c
 const fadeSum=()=>{const l=$("sumItems");l.classList.toggle("fade",l.scrollTop+l.clientHeight<l.scrollHeight-4)};
 $("sumItems").addEventListener("scroll",fadeSum,{passive:true});
 const money=c=>"$"+(c%100?(c/100).toFixed(2):c/100);
-function totals(it){const full=it.reduce((a,b)=>a+Math.round(b.price*100),0),bundle=it.length>=2,
-  pay=it.reduce((a,b)=>a+Math.round(b.price*100*(bundle?.75:1)),0);return{full,pay,off:full-pay,bundle}}
+const MULTI_DISCOUNT=0; // multi-beat discount is OFF (must match server.js)
+function totals(it){const full=it.reduce((a,b)=>a+Math.round(b.price*100),0),bundle=MULTI_DISCOUNT>0&&it.length>=2,
+  pay=it.reduce((a,b)=>a+Math.round(b.price*100*(bundle?1-MULTI_DISCOUNT:1)),0);return{full,pay,off:full-pay,bundle}}
 function renderCart(){
-  const it=items(),T=totals(it),dc=T.bundle?`<div class="it dc"><span>multi-beat discount: 25% off</span><span>−${money(T.off)}</span></div>`:"";
+  const it=items(),T=totals(it),dc=T.bundle?`<div class="it dc"><span>multi-beat discount: ${Math.round(MULTI_DISCOUNT*100)}% off</span><span>−${money(T.off)}</span></div>`:"";
   $("cnt").textContent=$("bdCnt").textContent=it.length;$("total").textContent=$("total2").textContent=money(T.pay);
   $("items").innerHTML=it.length?it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}<button class="rm" data-n="${esc(b.slug)}">remove</button></span></div>`).join("")+dc:'<p class="empty">your cart is empty. tap add on any beat.</p>';
   $("sumItems").innerHTML=it.map(b=>`<div class="it">${itemInfo(b)}<span>$${b.price}</span></div>`).join("");$("sumDc").innerHTML=dc;
@@ -535,7 +536,7 @@ function renderF(){
 function setGenre(g){
   genre=g;let shown=0;
   els.forEach(([el,b])=>{if(el.parentNode!==$("list"))return;const ok=!g||(b.genre||"").trim().toLowerCase()===g;el.hidden=!ok;if(ok)shown++});
-  $("flab").textContent=g||"filter";$("fbtn").classList.toggle("set",!!g);
+  $("flab").textContent=g||"filter by genre";$("fbtn").classList.toggle("set",!!g);
   let e=$("fempty");if(!shown){if(!e){e=document.createElement("p");e.id="fempty";e.className="fempty";$("list").appendChild(e)}e.textContent="no beats in this genre yet."}else if(e)e.remove();
   $("list").scrollTop=0;closeF();
 }
