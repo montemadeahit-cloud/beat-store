@@ -322,14 +322,15 @@ app.post("/api/checkout", async (req, res) => {
     const gone = beats.filter(b => !b.hasFull);
     if (gone.length) return res.status(400).json({ error: `not available right now: ${gone.map(b => b.name).join(", ")}` });
 
-    const bundle = beats.length >= 2; // 2+ beats = 25% off every beat in the order
+    const MULTI_DISCOUNT = 0; // multi-beat discount is OFF (set to 0.25 for 25% off 2+ beats)
+    const bundle = MULTI_DISCOUNT > 0 && beats.length >= 2;
     const params = {
       mode: "payment",
       payment_method_types: ["card", "us_bank_account"], // cards (incl. Apple/Google Pay) + US bank only
       customer_email: email,
       line_items: beats.map(b => ({
         quantity: 1,
-        price_data: { currency: "usd", unit_amount: Math.round(b.price * 100 * (bundle ? 0.75 : 1)),
+        price_data: { currency: "usd", unit_amount: Math.round(b.price * 100 * (bundle ? 1 - MULTI_DISCOUNT : 1)),
           product_data: { name: b.name, description: `${b.bpm} bpm · mp3 download${bundle ? " · multi-beat discount: 25% off" : ""}` } },
       })),
       payment_intent_data: { receipt_email: email },
