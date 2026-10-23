@@ -38,6 +38,12 @@ button,input{font:inherit;color:inherit}
 .acts{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px}
 .warn{border:1px solid #ffb86b;color:#ffb86b;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:15px}
 .name{font-weight:500;font-size:18px}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.ib{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--hair);background:none;color:var(--g);font:italic 700 15px Georgia,serif;cursor:pointer;padding:0}
+.ib:hover,.ib[aria-expanded=true]{background:#fff;color:#000;border-color:#fff}
+.stats{border:1px solid var(--hair);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.sg b{display:block;font-size:22px;font-weight:900;letter-spacing:-.02em}.sg span{color:var(--g);font-size:13px}
+@media(max-width:560px){.sg{grid-template-columns:repeat(2,1fr)}}
 .badge{font-size:13px;border:1px solid var(--hair);border-radius:999px;padding:2px 10px;color:var(--g);margin-left:8px;white-space:nowrap}
 .badge.live{color:#7be39b;border-color:#2b5a3a}
 .empty{color:var(--g)}
@@ -97,6 +103,10 @@ function upload(slug,kind,file,onp){
   });
 }
 const bumpMsg=r=>r.bumped&&r.bumped.length?` · "${r.bumped.join('", "')}" was swapped out of featured (max 5)`:"";
+const dur=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}h ${m}m`:m?`${m}m ${x}s`:`${x}s`};
+const statsHtml=st=>{const p=st.plays||0,a=st.adds||0,sec=st.secs||0;return `
+  <div class="sg"><div><b>${p}</b><span>listens</span></div><div><b>${a}</b><span>added to cart</span></div><div><b>${dur(sec)}</b><span>total time listened</span></div><div><b>${p?dur(sec/p):"–"}</b><span>avg per listen</span></div></div>
+  <p class="st" style="margin:10px 0 0">${st.since?`counting since ${new Date(st.since).toLocaleDateString()}. `:""}your own plays while logged in aren't counted.</p>`};
 const fileOk=f=>f&&/\.mp3$/i.test(f.name);
 async function peaksOf(buf){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
@@ -126,7 +136,8 @@ async function load(){
   if(!beats.length){box.innerHTML='<p class="empty">no beats yet. add your first one above.</p>';return}
   box.innerHTML=beats.map(b=>`
   <div class="box" data-slug="${esc(b.slug)}">
-    <div style="margin-bottom:12px"><span class="name">${esc(b.name)}</span>${b.genre?`<span class="badge">${esc(b.genre)}</span>`:""}<span class="badge ${b.hasFull?"live":""}">${b.hasFull?"live":"hidden: needs mp3"}</span></div>
+    <div class="hd"><div><span class="name">${esc(b.name)}</span>${b.genre?`<span class="badge">${esc(b.genre)}</span>`:""}<span class="badge ${b.hasFull?"live":""}">${b.hasFull?"live":"hidden: needs mp3"}</span></div><button class="ib" data-info aria-label="stats for ${esc(b.name)}" aria-expanded="false">i</button></div>
+    <div class="stats" hidden>${statsHtml(b.stats||{})}</div>
     <div class="row3"><input class="in" data-k="name" value="${esc(b.name)}" aria-label="name"><input class="in" data-k="genre" value="${esc(b.genre||"")}" placeholder="genre" maxlength="24" aria-label="genre"><input class="in" data-k="bpm" type="number" value="${b.bpm}" aria-label="bpm"><input class="in" data-k="price" type="number" value="${b.price}" aria-label="price"></div>
     <input class="in" data-k="coprod" value="${esc(b.coprod||"")}" placeholder="co-producers (optional, separate with commas)" maxlength="120" aria-label="co-producers" style="margin-bottom:6px">
     <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>
@@ -136,6 +147,10 @@ async function load(){
   </div>`).join("");
   backfill(beats);
 }
+$("#list").addEventListener("click",e=>{ // ⓘ toggles that beat's stats
+  const b=e.target.closest("[data-info]");if(!b)return;const box=b.closest("[data-slug]").querySelector(".stats");
+  box.hidden=!box.hidden;b.setAttribute("aria-expanded",!box.hidden);
+});
 $("#list").addEventListener("click",async e=>{
   const act=e.target.dataset.act,card=e.target.closest("[data-slug]");if(!act||!card)return;
   const slug=card.dataset.slug,st=card.querySelector(".st");
