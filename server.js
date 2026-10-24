@@ -140,7 +140,11 @@ const buyable = t => (t.coming_soon || t.price == null) ? [] : Object.entries(t.
 const shipUsd = () => Math.max(0, Number(teesConfig().shipping_usd) || 0);
 const publicShop = (preview = false) => !(teesOn() || preview) ? { tees: [], shipping: 0 } : { // preview = logged-in admin sees tees even while off
   preview: !teesOn(), shipping: shipUsd(),
-  tees: teesConfig().tees.map(t => ({ id: String(t.id), name: t.name, sub: t.sub || "", desc: t.desc || "", details: Array.isArray(t.details) ? t.details : [], price: t.price == null ? null : Number(t.price), soon: !!t.coming_soon || t.price == null, img: t.image ? `/img/${t.image}` : "", sizes: Object.keys(t.sizes || {}), buyable: buyable(t) })),
+  tees: teesConfig().tees.map(t => ({ id: String(t.id), name: t.name, sub: t.sub || "", desc: t.desc || "", details: Array.isArray(t.details) ? t.details : [], price: t.price == null ? null : Number(t.price), soon: !!t.coming_soon || t.price == null, img: t.image ? `/img/${t.image}?v=${photoVersion(t.image)}` : "", sizes: Object.keys(t.sizes || {}), buyable: buyable(t) })),
+};
+const photoVersion = f => { // changes whenever the photo changes, so browsers never show an old cached picture
+  const data = TEE_PHOTOS[f] || (fs.existsSync(path.join(ROOT, f)) ? fs.statSync(path.join(ROOT, f)).mtimeMs : f);
+  return crypto.createHash("md5").update(String(data)).digest("hex").slice(0, 8);
 };
 const parseTeeMeta = m => String(m || "").split(",").filter(Boolean).map(x => { const [id, size, qty] = x.split(":"); return { id, size, qty: Math.max(1, Number(qty) || 1) }; });
 
@@ -161,7 +165,7 @@ function render(beat, req, tee) {
     `<meta property="og:description" content="${esc(desc)}">`,
     `<meta property="og:url" content="${esc(url)}">`,
     `<meta name="twitter:card" content="${tee && tee.image ? "summary_large_image" : "summary"}">`,
-    ...(tee && tee.image ? [`<meta property="og:image" content="${esc(BASE_URL + "/img/" + tee.image)}">`] : []),
+    ...(tee && tee.image ? [`<meta property="og:image" content="${esc(BASE_URL + "/img/" + tee.image + "?v=" + photoVersion(tee.image))}">`] : []),
   ].join("\n");
   return TEMPLATE
     .replace("__TITLE__", () => esc(title))
