@@ -260,7 +260,8 @@ main{overflow-x:clip}
 .szb:hover{color:var(--w);border-color:rgba(255,255,255,.4)}.szb.on{background:var(--w);color:var(--b);border-color:var(--w)}
 .szb:disabled{opacity:.3;cursor:default;text-decoration:line-through}
 .tee .tadd{width:auto;padding:10px 24px;font-size:16px}
-.tbuy2{display:flex;align-items:center;gap:14px}.tee .tbuy2 .pr{text-align:left}
+.tbuy2{display:flex;align-items:center;gap:14px}
+.add.nosale,.add.nosale:hover{background:transparent;color:#7d7d7d;border:1px solid rgba(255,255,255,.28)!important;text-decoration:line-through;text-decoration-thickness:2px;box-shadow:none;cursor:not-allowed}.tee .tbuy2 .pr{text-align:left}
 .tee .soon{display:inline-block;margin-top:8px;border:1px solid var(--hair);border-radius:999px;padding:6px 14px;color:var(--g);font-size:13px;white-space:nowrap}
 .tc-nav{display:flex;justify-content:center;align-items:center;gap:24px;margin-top:20px}
 .tc-dots{display:flex;gap:8px}.tc-dots button{width:8px;height:8px;border-radius:50%;border:0;padding:0;background:#3a3a3a;cursor:pointer;transition:background .2s,width .2s}
@@ -380,8 +381,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const BEATS=JSON.parse($("catalog").textContent);
 const SHOP=(()=>{try{const x=JSON.parse($("shop").textContent);return{tees:x.tees||[],shipping:+x.shipping||0,preview:!!x.preview}}catch(e){return{tees:[],shipping:0}}})(); // tees come from tees.json (off = empty)
-const TEES=SHOP.tees,teeOf=id=>TEES.find(t=>t.id===id);
-const validEntry=n=>{if(!String(n).startsWith("tee:"))return BEATS.some(b=>b.slug===n);const[,id,size]=n.split(":"),t=teeOf(id);return!!t&&(t.buyable.includes(size)||(SHOP.preview&&t.sizes.includes(size)))};
+const TEES=SHOP.tees,teeOf=id=>TEES.find(t=>t.id===id),teePrice=t=>t.price==null?"?":"$"+t.price;
+const validEntry=n=>{if(!String(n).startsWith("tee:"))return BEATS.some(b=>b.slug===n);const[,id,size]=n.split(":"),t=teeOf(id);return!!t&&!t.soon&&(t.buyable.includes(size)||(SHOP.preview&&t.sizes.includes(size)))};
 const PLAY='<svg class="pl" viewBox="0 0 24 24"><path d="M7 4l14 8-14 8z"/></svg><svg class="pa" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
 const DOTS='<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
 const fmt=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
@@ -676,7 +677,7 @@ function teeSvg(t){
 (function(){
   const tc=$("teeTrack"),dots=$("tcDots");$("tees").hidden=!SHOW_TEES||!TEES.length;if($("tees").hidden)return;
   tc.innerHTML=TEES.map(t=>`<article class="tee"><div class="img${t.img?" photo":""}">${t.img?`<img src="${esc(t.img)}" alt="${esc(t.name)}" loading="lazy">`:teeSvg(t)}</div>
-    <div class="info"><div><div class="nm">${esc(t.name)}</div><div class="sub">${esc(t.sub)}</div></div><div class="tbuy2"><span class="pr">$${t.price}</span>${t.buyable.length||SHOP.preview?`<button class="add tadd" data-t="${esc(t.id)}">add</button>`:`<span class="soon">coming soon</span>`}</div></div></article>`).join("");
+    <div class="info"><div><div class="nm">${esc(t.name)}</div><div class="sub">${esc(t.sub)}</div></div><div class="tbuy2"><span class="pr">${teePrice(t)}</span>${t.soon?`<button class="add tadd nosale" disabled title="coming soon" aria-label="coming soon">add</button>`:t.buyable.length||SHOP.preview?`<button class="add tadd" data-t="${esc(t.id)}">add</button>`:`<span class="soon">coming soon</span>`}</div></div></article>`).join("");
   tc.addEventListener("click",e=>{ // "add" on a card opens that shirt's page to pick a size
     const a=e.target.closest(".tadd");if(!a)return;e.stopPropagation();openTee(teeOf(a.dataset.t));pickSizeHint();
   },true);
@@ -721,19 +722,19 @@ let tpCur=null,tpSize="";
 function openTee(t,push=true){
   if(!t)return;tpCur=t;tpSize="";
   $("tpImg").innerHTML=t.img?`<img src="${esc(t.img)}" alt="${esc(t.name)}">`:teeSvg(t);
-  $("tpName").textContent=t.name;$("tpPrice").textContent="$"+t.price;$("tpSub").textContent=t.sub||"";
-  const ok=z=>t.buyable.includes(z)||SHOP.preview,can=t.buyable.length||SHOP.preview;
+  $("tpName").textContent=t.name;$("tpPrice").textContent=teePrice(t);$("tpSub").textContent=t.sub||"";
+  const ok=z=>t.soon||t.buyable.includes(z)||SHOP.preview,can=t.soon||t.buyable.length||SHOP.preview;
   $("tpSizes").innerHTML=t.sizes.map(z=>`<button class="szb" data-s="${esc(z)}"${ok(z)?"":" disabled"}>${esc(z)}</button>`).join("");
   $("tpDesc").textContent=t.desc||"";$("tpDet").innerHTML=(t.details||[]).map(d=>`<li>${esc(d)}</li>`).join("");
-  $("tpAdd").hidden=!can;$("tpSoon").hidden=!!can;$("tpAdd").textContent="add to cart";
+  $("tpAdd").hidden=!can;$("tpSoon").hidden=!!can;$("tpAdd").textContent="add to cart";$("tpAdd").disabled=!!t.soon;$("tpAdd").classList.toggle("nosale",!!t.soon);$("tpAdd").title=t.soon?"coming soon":"";
   $("tp").hidden=false;$("tp").scrollTop=0;document.title=t.name+" – montemadethis";
   if(push)history.pushState({},"","/tee/"+encodeURIComponent(t.id));
 }
 function closeTee(push=true){tpCur=null;$("tp").hidden=true;document.title="montemadethis";if(push)history.pushState({},"","/")}
-function pickSizeHint(){const a=$("tpAdd");if(a.hidden)return;a.textContent="pick a size";$("tpSizes").classList.add("nudge");setTimeout(()=>{if(!tpSize)a.textContent="add to cart";$("tpSizes").classList.remove("nudge")},1600)}
+function pickSizeHint(){const a=$("tpAdd");if(a.hidden||a.disabled)return;a.textContent="pick a size";$("tpSizes").classList.add("nudge");setTimeout(()=>{if(!tpSize)a.textContent="add to cart";$("tpSizes").classList.remove("nudge")},1600)}
 $("tpSizes").onclick=e=>{const z=e.target.closest(".szb");if(!z||z.disabled)return;tpSize=z.dataset.s;$("tpSizes").querySelectorAll(".szb").forEach(x=>x.classList.toggle("on",x===z));$("tpAdd").textContent="add to cart"};
 $("tpAdd").onclick=()=>{
-  if(!tpCur)return;if(!tpSize)return pickSizeHint();
+  if(!tpCur||tpCur.soon)return;if(!tpSize)return pickSizeHint();
   cart.push(`tee:${tpCur.id}:${tpSize}`);save();renderCart();
   const a=$("tpAdd");a.textContent="added ✓";a.classList.add("in");setTimeout(()=>{a.textContent="add to cart";a.classList.remove("in")},1400);
   toast(tpCur.buyable.includes(tpSize)?"added to cart":"added (preview: not for sale yet)");
