@@ -235,6 +235,7 @@ main{padding-bottom:72px}
 /* graphic tees (visual preview) */
 .tees{padding:72px 0 0}.tees[hidden]{display:none}
 .tees .intro{padding:0 0 28px}
+.tees .head{text-align:center}
 .pvw{display:inline-block;margin:6px 0 0;padding:5px 12px;border:1px dashed rgba(255,255,255,.35);border-radius:999px;color:var(--g);font-size:13px}.pvw[hidden]{display:none}
 .tc-wrap{position:relative;--cw:min(500px,46vw)}
 .tc-side{position:absolute;top:calc(var(--cw)/2);transform:translateY(-50%);z-index:3;width:52px;height:52px;border-radius:50%;border:1px solid rgba(255,255,255,.28);
@@ -242,6 +243,10 @@ main{padding-bottom:72px}
 .tc-side:hover{background:var(--w);color:var(--b)}.tc-side:disabled{opacity:0;pointer-events:none}
 .tc-side svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
 .tc-side.l{left:calc(50% - var(--cw)/2 - 26px)}.tc-side.r{right:calc(50% - var(--cw)/2 - 26px)}
+@media(min-width:821px){ /* 1-2 shirts on desktop: side by side, centered, no arrows */
+  .tc-wrap.few .tc{justify-content:center;padding:0 0 4px;overflow:visible;-webkit-mask-image:none;mask-image:none}
+  .tc-wrap.few .tee{flex:0 1 min(460px,calc(50% - 9px));opacity:1;transform:none;cursor:pointer}
+  .tc-wrap.few .tc-side,.tc-wrap.few .tc-nav{display:none}}
 .tee.on{opacity:1;transform:none;cursor:default}
 main{overflow-x:clip}
 .tc{display:flex;gap:18px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:0 calc(50% - var(--cw)/2) 4px;
@@ -296,7 +301,7 @@ main{overflow-x:clip}
     <div class="fbox" id="feat" role="tabpanel"></div><div class="list" id="list" role="tabpanel" hidden></div></section>
   <div class="intro contact"><p id="msg">for all inquiries &amp; custom work, please email me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
   <section class="tees" id="tees">
-    <div class="intro"><h1>shop graphic tees</h1><p class="pvw" id="teePvw" hidden>preview · only you can see this</p></div>
+    <div class="intro"><h1>i draw sometimes</h1><p class="pvw" id="teePvw" hidden>preview · only you can see this</p></div>
     <div class="tc-wrap"><div class="tc" id="teeTrack"></div>
       <button class="tc-side l" id="tcPrev" aria-label="previous tee"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><button class="tc-side r" id="tcNext" aria-label="next tee"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
       <div class="tc-nav"><div class="tc-dots" id="tcDots"></div></div></div>
@@ -688,7 +693,9 @@ function teeSvg(t){
   const cur=()=>{let best=0,d=1e9;cards.forEach((c,i)=>{const x=Math.abs(pos(c)-tc.scrollLeft);if(x<d){d=x;best=i}});return best};
   const sync=()=>{const i=cur();cards.forEach((c,k)=>c.classList.toggle("on",k===i));[...dots.children].forEach((d,k)=>d.classList.toggle("on",k===i));$("tcPrev").disabled=i===0;$("tcNext").disabled=i===cards.length-1};
   $("tcPrev").onclick=()=>go(cur()-1);$("tcNext").onclick=()=>go(cur()+1);dots.onclick=e=>{const b=e.target.closest("[data-i]");if(b)go(+b.dataset.i)};
-  cards.forEach((c,i)=>c.addEventListener("click",()=>{if(i!==cur())go(i);else openTee(TEES[i])})); // side card: bring to middle; middle card: open its page
+  const wrap=tc.closest(".tc-wrap");wrap.classList.toggle("few",cards.length<=2);
+  const sideBySide=()=>wrap.classList.contains("few")&&matchMedia("(min-width:821px)").matches;
+  cards.forEach((c,i)=>c.addEventListener("click",()=>{if(!sideBySide()&&i!==cur())go(i);else openTee(TEES[i])})); // side card: bring to middle; middle card: open its page
   tc.addEventListener("scroll",()=>requestAnimationFrame(sync),{passive:true});
   const start=()=>{go(Math.floor(cards.length/2),true);sync()}; // open on the middle tee
   addEventListener("resize",start);start();requestAnimationFrame(start);
