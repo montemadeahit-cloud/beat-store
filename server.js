@@ -67,7 +67,7 @@ const TEE_SHOP = {
   "tees": [
     {
       "id": "tee001",
-      "name": "test product tee 001",
+      "name": "evil eye tee",
       "sub": "100% cotton · heavyweight 6.5 oz",
       "price": null,
       "image": "tee-eye.jpg",
@@ -89,7 +89,7 @@ const TEE_SHOP = {
     },
     {
       "id": "tee004",
-      "name": "test product tee 004",
+      "name": "fallen angel tee",
       "sub": "100% cotton · heavyweight 6.5 oz",
       "price": null,
       "image": "tee-angel.jpg",
