@@ -219,14 +219,19 @@ function purchaseEmail({ first, beats, link, attach, one, teeLines = [], gift = 
 <tr><td align="center" style="padding:32px 16px">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
     <tr><td style="padding:0 0 36px">${logo}</td></tr>
-    <tr><td style="${F}font-size:40px;font-weight:900;letter-spacing:-1.5px;line-height:1;color:#fff;padding:0 0 14px">${gift ? "a beat for you." : `thank you${first ? `, ${first}` : ""}.`}</td></tr>
-    <tr><td style="${F}font-size:16px;line-height:1.6;color:${G};padding:0 0 28px">${gift ? "here's a free download from montemadethis. " : ""}${beats.length ? (attach
+    <tr><td style="${F}font-size:40px;font-weight:900;letter-spacing:-1.5px;line-height:1;color:#fff;padding:0 0 14px">${gift ? "here's the beat." : `thank you${first ? `, ${first}` : ""}.`}</td></tr>
+    <tr><td style="${F}font-size:16px;line-height:1.6;color:${G};padding:0 0 28px">${beats.length ? (attach
       ? `your ${one ? "beat is" : "beats are"} attached to this email. you can also download ${one ? "it" : "them"} below any time in the next 30 days.`
       : `your ${one ? "beat is" : "beats are"} ready. download below any time in the next 30 days.`) : ""}${teeLines.length
       ? `${beats.length ? " " : ""}your ${teeLines.reduce((n, l) => n + l.qty, 0) > 1 ? "tees are" : "tee is"} being made to order. you'll get a separate email with tracking when ${teeLines.reduce((n, l) => n + l.qty, 0) > 1 ? "they ship" : "it ships"}.` : ""}</td></tr>
     ${cards}
     <tr><td style="padding:16px 0 0;border-top:1px solid ${H}"></td></tr>
-    ${beats.length ? `<tr><td style="${F}font-size:13px;line-height:1.7;color:${G};padding:4px 0 24px">
+    ${gift ? `<tr><td style="${F}font-size:13px;line-height:1.7;color:${G};padding:4px 0 24px">
+      uploading this beat for profit anywhere requires a lease<br>
+      must credit (prod. montemadethis) &amp; any producers listed in the file name in the track title<br>
+      must provide proper splits (%) when uploading<br>
+      <a href="${BASE_URL}/beat/${beats[0].slug}" style="color:#fff;text-decoration:underline">get a lease</a></td></tr>`
+    : beats.length ? `<tr><td style="${F}font-size:13px;line-height:1.7;color:${G};padding:4px 0 24px">
       must credit (prod. montemadethis) &amp; any producers listed in the file name<br>
       must provide proper splits when uploading for profit on any streaming service</td></tr>` : `<tr><td style="padding:4px 0 8px"></td></tr>`}
     <tr><td style="${F}font-size:13px;line-height:1.7;color:${G}">questions? just reply to this email.<br>
@@ -433,11 +438,13 @@ app.post("/api/admin/beats/:slug/gift", requireAdmin, async (req, res) => {
   try {
     const { error } = await resend.emails.send({
       from: FROM_EMAIL, to, replyTo: OWNER_EMAIL,
-      subject: `a free beat for you: "${b.name}" (${b.bpm} bpm)`,
+      subject: `here's the beat, download: ${b.name} (${b.bpm} bpm)`,
       html: purchaseEmail({ first: "", beats: [b], link, attach, one: true, gift: true }),
-      text: [`here's a free download from montemadethis: ${b.name} (prod. ${producers(b).join(" x ")}) · ${b.bpm} bpm`, link(b), "",
-        "must credit (prod. montemadethis) & any producers listed in the file name",
-        "must provide proper splits when uploading for profit on any streaming service", "",
+      text: [`here's the beat: ${b.name} (prod. ${producers(b).join(" x ")}) · ${b.bpm} bpm`, `download: ${link(b)}`, "",
+        "uploading this beat for profit anywhere requires a lease",
+        "must credit (prod. montemadethis) & any producers listed in the file name in the track title",
+        "must provide proper splits (%) when uploading",
+        `get a lease: ${BASE_URL}/beat/${b.slug}`, "",
         "the link works for 30 days. questions? just reply to this email.", "", "— montemadethis"].join("\n"),
       attachments: attach ? [{ filename: fileName(b), content: fs.readFileSync(fullPath(b.slug)) }] : [],
     }, { idempotencyKey: id });
