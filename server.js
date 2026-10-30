@@ -184,7 +184,7 @@ const fileName = b => safeName(`${b.name} (prod. ${producers(b).join(" x ")})`) 
 /* ---------- branded purchase email (black, like the site) ---------- */
 const LOGO_FILE = path.join(ROOT, "email-logo.png"); // white wordmark, transparent background
 const HAS_LOGO = fs.existsSync(LOGO_FILE);
-function purchaseEmail({ first, beats, link, attach, one, teeLines = [] }) {
+function purchaseEmail({ first, beats, link, attach, one, teeLines = [], gift = false }) {
   const F = "font-family:Helvetica,Arial,sans-serif;", G = "#8f8f8f", H = "#2a2a2a";
   const logo = HAS_LOGO
     ? `<img src="${BASE_URL}/email-logo.png" width="220" alt="montemadethis." style="display:block;width:220px;max-width:100%;height:auto;border:0">`
@@ -219,8 +219,8 @@ function purchaseEmail({ first, beats, link, attach, one, teeLines = [] }) {
 <tr><td align="center" style="padding:32px 16px">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
     <tr><td style="padding:0 0 36px">${logo}</td></tr>
-    <tr><td style="${F}font-size:40px;font-weight:900;letter-spacing:-1.5px;line-height:1;color:#fff;padding:0 0 14px">thank you${first ? `, ${first}` : ""}.</td></tr>
-    <tr><td style="${F}font-size:16px;line-height:1.6;color:${G};padding:0 0 28px">${beats.length ? (attach
+    <tr><td style="${F}font-size:40px;font-weight:900;letter-spacing:-1.5px;line-height:1;color:#fff;padding:0 0 14px">${gift ? "a beat for you." : `thank you${first ? `, ${first}` : ""}.`}</td></tr>
+    <tr><td style="${F}font-size:16px;line-height:1.6;color:${G};padding:0 0 28px">${gift ? "here's a free download from montemadethis. " : ""}${beats.length ? (attach
       ? `your ${one ? "beat is" : "beats are"} attached to this email. you can also download ${one ? "it" : "them"} below any time in the next 30 days.`
       : `your ${one ? "beat is" : "beats are"} ready. download below any time in the next 30 days.`) : ""}${teeLines.length
       ? `${beats.length ? " " : ""}your ${teeLines.reduce((n, l) => n + l.qty, 0) > 1 ? "tees are" : "tee is"} being made to order. you'll get a separate email with tracking when ${teeLines.reduce((n, l) => n + l.qty, 0) > 1 ? "they ship" : "it ships"}.` : ""}</td></tr>
@@ -420,6 +420,33 @@ function applyFeatured(b, wasFeatured) {
   while (on.length > MAX_FEATURED) { const old = on.shift(); if (old === b) { on.push(old); continue; } old.featured = false; delete old.featuredAt; bumped.push(old.name); }
   return bumped;
 }
+/* admin: send a beat free to someone (same branded email + 30-day download link as a purchase, no charge) */
+app.post("/api/admin/beats/:slug/gift", requireAdmin, async (req, res) => {
+  const b = getBeat(req.params.slug);
+  if (!b || !b.hasFull) return res.status(404).json({ error: "this beat needs an mp3 uploaded first" });
+  const to = String(req.body?.email || "").trim();
+  if (!/^\S+@\S+\.\S+$/.test(to)) return res.status(400).json({ error: "enter a valid email" });
+  if (!resend) return res.status(500).json({ error: "email isn't set up yet (RESEND_API_KEY)" });
+  const id = "gift-" + crypto.randomBytes(6).toString("hex"), exp = Date.now() + 30 * 24 * 3600 * 1000;
+  const link = x => `${BASE_URL}/download/${x.slug}?o=${id}&e=${exp}&sig=${sign(x.slug, id, exp)}`;
+  const attach = fs.statSync(fullPath(b.slug)).size <= 25 * 1024 * 1024;
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM_EMAIL, to, replyTo: OWNER_EMAIL,
+      subject: `a free beat for you: "${b.name}" (${b.bpm} bpm)`,
+      html: purchaseEmail({ first: "", beats: [b], link, attach, one: true, gift: true }),
+      text: [`here's a free download from montemadethis: ${b.name} (prod. ${producers(b).join(" x ")}) · ${b.bpm} bpm`, link(b), "",
+        "must credit (prod. montemadethis) & any producers listed in the file name",
+        "must provide proper splits when uploading for profit on any streaming service", "",
+        "the link works for 30 days. questions? just reply to this email.", "", "— montemadethis"].join("\n"),
+      attachments: attach ? [{ filename: fileName(b), content: fs.readFileSync(fullPath(b.slug)) }] : [],
+    }, { idempotencyKey: id });
+    if (error) throw new Error(JSON.stringify(error));
+    console.log("gift sent", b.slug, to);
+    res.json({ ok: true });
+  } catch (e) { console.error("gift failed", e); res.status(502).json({ error: "couldn't send it: " + String(e.message).slice(0, 160) }); }
+});
+
 /* admin helper: lists your printful products + variant ids (to copy into TEE_SHOP in server.js) */
 app.get("/api/admin/printful/variants", requireAdmin, async (_req, res) => {
   if (!PRINTFUL_API_KEY) return res.status(400).json({ error: "PRINTFUL_API_KEY isn't set" });
