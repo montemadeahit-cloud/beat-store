@@ -41,6 +41,8 @@ button,input{font:inherit;color:inherit}
 .hd{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
 .ib{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--hair);background:none;color:var(--g);font:italic 700 15px Georgia,serif;cursor:pointer;padding:0}
 .ib:hover,.ib[aria-expanded=true]{background:#fff;color:#000;border-color:#fff}
+.gift{display:flex;gap:8px;align-items:center;margin:12px 0 0;flex-wrap:wrap}.gift .glab{color:var(--g);font-size:14px;white-space:nowrap}.gift .in{flex:1;min-width:180px}
+.sn{color:var(--g);font-size:14px;margin:10px 0 0}
 .stats{border:1px solid var(--hair);border-radius:12px;padding:14px 16px;margin:0 0 14px}
 .sg{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.sg b{display:block;font-size:22px;font-weight:900;letter-spacing:-.02em}.sg span{color:var(--g);font-size:13px}
 @media(max-width:560px){.sg{grid-template-columns:repeat(2,1fr)}}
@@ -106,7 +108,7 @@ const bumpMsg=r=>r.bumped&&r.bumped.length?` · "${r.bumped.join('", "')}" was s
 const dur=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}h ${m}m`:m?`${m}m ${x}s`:`${x}s`};
 const statsHtml=st=>{const p=st.plays||0,a=st.adds||0,sec=st.secs||0;return `
   <div class="sg"><div><b>${p}</b><span>listens</span></div><div><b>${a}</b><span>added to cart</span></div><div><b>${dur(sec)}</b><span>total time listened</span></div><div><b>${p?dur(sec/p):"–"}</b><span>avg per listen</span></div></div>
-  <p class="st" style="margin:10px 0 0">${st.since?`counting since ${new Date(st.since).toLocaleDateString()}. `:""}your own plays while logged in aren't counted.</p>`};
+  <p class="sn">${st.since?`counting since ${new Date(st.since).toLocaleDateString()}. `:""}your own plays while logged in aren't counted.</p>`};
 const fileOk=f=>f&&/\.mp3$/i.test(f.name);
 async function peaksOf(buf){
   const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
@@ -143,6 +145,7 @@ async function load(){
     <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>
     <div class="file"><span>mp3: ${b.hasFull?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="full" accept=".mp3,audio/mpeg"></div>
     <div class="bar"><i></i></div>
+    ${b.hasFull?`<div class="gift"><span class="glab">send it free</span><input class="in" type="email" data-gift placeholder="their email" aria-label="email to send ${esc(b.name)} to"><button class="btn ghost" data-act="gift">send</button></div>`:""}
     <div class="acts"><button class="btn ghost" data-act="save">save changes</button>${b.hasFull?`<a class="lnk" href="/beat/${esc(b.slug)}" target="_blank">view page</a>`:""}<button class="lnk danger" data-act="del">delete</button><span class="st"></span></div>
   </div>`).join("");
   backfill(beats);
@@ -159,6 +162,13 @@ $("#list").addEventListener("click",async e=>{
       const g=k=>card.querySelector(`[data-k=${k}]`);
       const r=await api("PATCH","/api/admin/beats/"+slug,{name:g("name").value,genre:g("genre").value,coprod:g("coprod").value,bpm:g("bpm").value,price:g("price").value,featured:g("featured").checked});
       st.textContent="saved"+bumpMsg(r);setTimeout(load,r.bumped&&r.bumped.length?2500:600);
+    }
+    if(act==="gift"){
+      const inp=card.querySelector("[data-gift]"),email=inp.value.trim(),btn=e.target;
+      if(!/^\S+@\S+\.\S+$/.test(email)){st.textContent="enter their email first";st.style.color="#ff6b6b";return}
+      btn.disabled=true;btn.textContent="sending…";st.style.color="";st.textContent="";
+      try{await api("POST","/api/admin/beats/"+slug+"/gift",{email});st.textContent="sent to "+email+" ✓";st.style.color="#7be39b";inp.value=""}
+      finally{btn.disabled=false;btn.textContent="send"}
     }
     if(act==="del"){
       if(!confirm("delete this beat and its files? this can't be undone."))return;
