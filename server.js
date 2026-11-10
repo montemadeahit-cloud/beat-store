@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -22,7 +23,9 @@ const DATA_DIR = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH |
 const PERSISTENT = !process.env.RAILWAY_ENVIRONMENT || !!(process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH);
 const FULL_DIR = path.join(DATA_DIR, "full");        // the mp3s
 const CATALOG = path.join(DATA_DIR, "beats.json");
-fs.mkdirSync(FULL_DIR, { recursive: true });
+const COVER_DIR = path.join(DATA_DIR, "covers");  // cover photos for the type beat videos
+const VIDEO_DIR = path.join(DATA_DIR, "videos");  // the finished mp4s
+for (const d of [FULL_DIR, COVER_DIR, VIDEO_DIR]) fs.mkdirSync(d, { recursive: true });
 if (!PERSISTENT) console.warn("[warn] no Railway Volume attached: uploads will be lost on redeploy");
 
 const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
@@ -151,7 +154,10 @@ const parseTeeMeta = m => String(m || "").split(",").filter(Boolean).map(x => { 
 /* ---------- page rendering (adds per-beat share preview tags) ---------- */
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const TEMPLATE = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-const ADMIN_PAGE = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8");
+const ADMIN_PAGE = (() => { // admin.html + the type beat video tool (admin-video.js) added on top
+  const page = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8"), tag = `<script src="/admin-video.js" defer></script>`;
+  return /<\/body>/i.test(page) ? page.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + "</body>") : page + tag;
+})();
 function render(beat, req, tee) {
   const title = beat ? `${beat.name} – montemadethis` : tee ? `${tee.name} – montemadethis` : "montemadethis";
   const desc = beat ? `${beat.name} · ${beat.genre ? beat.genre + " · " : ""}${beat.bpm} bpm · $${beat.price}. preview and buy.`
@@ -327,6 +333,54 @@ async function fulfill(session) {
   console.log("fulfilled", session.id, to, beats.map(b => b.slug).join(","));
 }
 
+/* ---------- type beat videos: cover photo + mp3 -> 1080p mp4 (black background, photo cropped to a 1000px square) ---------- */
+let FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+if (!process.env.FFMPEG_PATH) { try { const m = await import("ffmpeg-static"); if (m.default) FFMPEG = m.default; } catch {} }
+const VIDEO_LAYOUT = { w: 1920, h: 1080, photo: 1000 };
+const coverPath = b => b && b.cover ? path.join(COVER_DIR, b.cover) : "";
+const videoPath = slug => path.join(VIDEO_DIR, slug + ".mp4");
+const videoName = b => safeName(`${b.name} (prod. ${producers(b).join(" x ")})`) + ".mp4";
+let renderChain = Promise.resolve(); // one video at a time so the server stays responsive
+function queueRender(slug) {
+  const b = DB.find(x => x.slug === slug);
+  if (!b || !b.cover || !fs.existsSync(coverPath(b)) || !fs.existsSync(fullPath(slug))) return;
+  const job = crypto.randomBytes(4).toString("hex");
+  b.video = { status: "rendering", job, at: Date.now() }; saveDB();
+  renderChain = renderChain.then(() => renderVideo(slug, job)).catch(e => console.error("render chain", e));
+}
+function renderVideo(slug, job) {
+  return new Promise(resolve => {
+    let finished = false;
+    const done = patch => {
+      if (finished) return; finished = true;
+      const e = DB.find(x => x.slug === slug);
+      if (e && e.video?.job === job) { e.video = { ...patch, at: Date.now() }; saveDB(); } // ignore if a newer render replaced this one
+      if (patch.status === "error") console.error("video failed", slug, patch.error);
+      resolve();
+    };
+    const b = DB.find(x => x.slug === slug);
+    if (!b || b.video?.job !== job) return done({ status: "replaced" });
+    if (!fs.existsSync(coverPath(b)) || !fs.existsSync(fullPath(slug))) return done({ status: "error", error: "needs both the mp3 and a cover photo" });
+    const { w, h, photo } = VIDEO_LAYOUT, out = videoPath(slug), tmp = out + ".tmp.mp4";
+    const vf = `crop='min(iw,ih)':'min(iw,ih)',scale=${photo}:${photo}:flags=lanczos,setsar=1,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p`;
+    const args = ["-y", "-hide_banner", "-loglevel", "error",
+      "-loop", "1", "-framerate", "2", "-i", coverPath(b), "-i", fullPath(slug),
+      "-map", "0:v:0", "-map", "1:a:0", "-vf", vf,
+      "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", "18", "-r", "2", "-g", "10",
+      "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-shortest", "-movflags", "+faststart", tmp];
+    let err = "";
+    const p = spawn(FFMPEG, args);
+    p.stderr.on("data", d => { err = (err + d).slice(-2000); });
+    p.on("error", e => done({ status: "error", error: e.code === "ENOENT" ? "ffmpeg isn't installed on the server (add ffmpeg-static to package.json)" : e.message }));
+    p.on("close", code => {
+      if (code === 0) { try { fs.renameSync(tmp, out); return done({ status: "ready" }); } catch (e) { return done({ status: "error", error: e.message }); } }
+      fs.rm(tmp, { force: true }, () => {});
+      done({ status: "error", error: (err.trim().split("\n").pop() || "ffmpeg failed").slice(0, 200) });
+    });
+  });
+}
+for (const b of DB) if (b.video?.status === "rendering") queueRender(b.slug); // server restarted mid-render: start it again
+
 const app = express();
 app.set("trust proxy", 1);
 
@@ -370,6 +424,7 @@ const tries = new Map(); // ip -> {n, reset}  (stops password guessing)
 app.get("/admin", (_req, res) => {
   res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex" }).type("html").send(ADMIN_PAGE);
 });
+app.get("/admin-video.js", (_req, res) => res.set({ "Cache-Control": "no-cache", "Content-Type": "text/javascript; charset=utf-8" }).sendFile(path.join(ROOT, "admin-video.js")));
 app.get("/api/admin/me", (req, res) => res.json({ authed: isAdmin(req), configured: !!ADMIN_PASSWORD, persistent: PERSISTENT }));
 app.post("/api/admin/login", (req, res) => {
   if (!ADMIN_PASSWORD) return res.status(500).json({ error: "ADMIN_PASSWORD isn't set in Railway yet" });
@@ -468,7 +523,7 @@ app.get("/api/admin/printful/variants", requireAdmin, async (_req, res) => {
     res.json(out);
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
-app.get("/api/admin/beats", requireAdmin, (_req, res) => res.json(allBeats().map(b => ({ ...b, stats: STATS[b.slug] || { plays: 0, adds: 0, secs: 0 } }))));
+app.get("/api/admin/beats", requireAdmin, (_req, res) => res.json(allBeats().map(b => ({ ...b, ...videoInfo(b), stats: STATS[b.slug] || { plays: 0, adds: 0, secs: 0 } }))));
 app.post("/api/admin/beats", requireAdmin, (req, res) => {
   try {
     const f = cleanFields(req.body || {}, false);
@@ -493,8 +548,65 @@ app.delete("/api/admin/beats/:slug", requireAdmin, (req, res) => {
   if (i < 0) return res.status(404).json({ error: "beat not found" });
   const [b] = DB.splice(i, 1); saveDB();
   if (STATS[b.slug]) { delete STATS[b.slug]; statsDirty = true; }
-  for (const p of [fullPath(b.slug)]) fs.rm(p, { force: true }, () => {});
+  for (const p of [fullPath(b.slug), videoPath(b.slug), coverPath(b)].filter(Boolean)) fs.rm(p, { force: true }, () => {});
   res.json({ ok: true });
+});
+
+/* ---------- type beat video: upload the cover photo, then download the finished mp4 ---------- */
+const videoInfo = b => {
+  const v = b.video || {};
+  const ready = v.status === "ready" && fs.existsSync(videoPath(b.slug));
+  return {
+    hasCover: !!(b.cover && fs.existsSync(coverPath(b))),
+    video: { status: ready ? "ready" : v.status === "ready" ? "missing" : (v.status || "none"), error: v.error || "", at: v.at || 0,
+      url: ready ? `/api/admin/beats/${b.slug}/video?v=${v.at || 0}` : "" },
+  };
+};
+const MAX_COVER = 25 * 1024 * 1024;
+app.put("/api/admin/beats/:slug/cover", requireAdmin, (req, res) => {
+  const b = DB.find(x => x.slug === req.params.slug);
+  if (!b) return res.status(404).json({ error: "beat not found" });
+  if (Number(req.headers["content-length"] || 0) > MAX_COVER) return res.status(413).json({ error: "photo is over 25MB" });
+  const parts = []; let n = 0, dead = false;
+  req.on("data", c => { if (dead) return; n += c.length; if (n > MAX_COVER) { dead = true; res.status(413).set("Connection", "close").json({ error: "photo is over 25MB" }); req.resume(); return; } parts.push(c); });
+  req.on("end", () => {
+    if (dead) return;
+    const buf = Buffer.concat(parts);
+    const ext = buf[0] === 0xff && buf[1] === 0xd8 ? "jpg"
+      : buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? "png"
+      : buf.subarray(0, 4).toString() === "RIFF" && buf.subarray(8, 12).toString() === "WEBP" ? "webp" : "";
+    if (!ext) return res.status(400).json({ error: "use a jpg, png or webp photo" });
+    if (b.cover) fs.rm(coverPath(b), { force: true }, () => {});
+    b.cover = `${b.slug}-${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(COVER_DIR, b.cover), buf);
+    fs.rm(videoPath(b.slug), { force: true }, () => {}); // old video has the old photo
+    b.video = { status: "waiting", at: Date.now() }; saveDB();
+    queueRender(b.slug); // starts now if the mp3 is already up, otherwise when it arrives
+    res.json({ ok: true, ...videoInfo(b) });
+  });
+  req.on("aborted", () => { dead = true; });
+});
+app.get("/api/admin/beats/:slug/cover", requireAdmin, (req, res) => {
+  const b = DB.find(x => x.slug === req.params.slug);
+  if (!b || !b.cover || !fs.existsSync(coverPath(b))) return res.sendStatus(404);
+  res.sendFile(coverPath(b), { headers: { "Cache-Control": "no-store" } });
+});
+app.get("/api/admin/beats/:slug/video/status", requireAdmin, (req, res) => {
+  const b = DB.find(x => x.slug === req.params.slug);
+  b ? res.set("Cache-Control", "no-store").json(videoInfo(b)) : res.status(404).json({ error: "beat not found" });
+});
+app.post("/api/admin/beats/:slug/video", requireAdmin, (req, res) => { // make it again
+  const b = DB.find(x => x.slug === req.params.slug);
+  if (!b) return res.status(404).json({ error: "beat not found" });
+  if (!b.cover || !fs.existsSync(coverPath(b))) return res.status(400).json({ error: "upload a cover photo first" });
+  if (!fs.existsSync(fullPath(b.slug))) return res.status(400).json({ error: "upload the mp3 first" });
+  queueRender(b.slug);
+  res.json({ ok: true, ...videoInfo(b) });
+});
+app.get("/api/admin/beats/:slug/video", requireAdmin, (req, res) => {
+  const b = getBeat(req.params.slug);
+  if (!b || !fs.existsSync(videoPath(b.slug))) return res.status(404).send("no video yet");
+  res.download(videoPath(b.slug), videoName(b));
 });
 
 /* upload an mp3 (raw file body, streamed straight to disk) */
@@ -517,6 +629,7 @@ app.put("/api/admin/beats/:slug/:kind", requireAdmin, (req, res) => {
     if (!isMp3) return fail(400, "that doesn't look like an mp3 file");
     fs.renameSync(tmp, dest);
     const entry = DB.find(x => x.slug === slug); if (entry) { delete entry.peaks; saveDB(); } // new audio = old waveform is stale
+    queueRender(slug); // a cover is already there: make (or remake) the video with the new audio
     res.json({ ok: true, beat: getBeat(slug) });
   });
   req.pipe(out);
