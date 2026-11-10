@@ -644,6 +644,26 @@ app.get("/api/admin/beats/:slug/video", requireAdmin, (req, res) => {
   res.download(videoPath(b.slug), videoName(b));
 });
 
+/* ---------- video storage: see how much space videos use, and clear them out ---------- */
+const dirBytes = d => { let n = 0; try { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); n += e.isDirectory() ? dirBytes(f) : fs.statSync(f).size; } } catch {} return n; };
+app.get("/api/admin/videos/storage", requireAdmin, (_req, res) => {
+  const beatVideos = fs.readdirSync(VIDEO_DIR).filter(f => f.endsWith(".mp4")).length;
+  res.set("Cache-Control", "no-store").json({ bytes: dirBytes(VIDEO_DIR) + dirBytes(COVER_DIR) + dirBytes(QUICK_DIR), beatVideos, quickVideos: fs.readdirSync(QUICK_DIR).length });
+});
+app.delete("/api/admin/beats/:slug/video", requireAdmin, (req, res) => { // removes the mp4 only; the photo stays so it can be made again
+  const b = DB.find(x => x.slug === req.params.slug);
+  if (!b) return res.status(404).json({ error: "beat not found" });
+  fs.rm(videoPath(b.slug), { force: true }, () => {});
+  b.video = { status: "none", at: Date.now() }; saveDB();
+  res.json({ ok: true, ...videoInfo(b), video: { status: "none", error: "", at: b.video.at, url: "" } });
+});
+app.delete("/api/admin/quick", requireAdmin, (req, res) => { // clear quick videos: all, or ?olderThan=days
+  const days = Number(req.query.olderThan || 0), cutoff = Date.now() - days * 864e5;
+  let n = 0;
+  for (const id of fs.readdirSync(QUICK_DIR)) { const m = quickMeta(id); if (m?.status === "rendering") continue; if (!days || !m || (m.created || 0) < cutoff) { fs.rmSync(quickDir(id), { recursive: true, force: true }); n++; } }
+  res.json({ ok: true, deleted: n });
+});
+
 /* ---------- quick videos (not in the store) ---------- */
 app.get("/api/admin/quick", requireAdmin, (_req, res) => {
   const list = fs.readdirSync(QUICK_DIR).map(quickMeta).filter(m => m && m.audio).sort((a, b) => b.created - a.created).map(quickOut);
