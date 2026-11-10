@@ -26,7 +26,10 @@
   .mv-a{display:inline-block;border:1px solid #333;background:#151515;color:#fff;border-radius:999px;padding:8px 14px;font:700 13px/1 Helvetica,Arial,sans-serif;cursor:pointer;text-decoration:none;white-space:nowrap}
   .mv-a.pri{background:#fff;color:#000;border-color:#fff}
   .mv-a[disabled]{opacity:.4;pointer-events:none}
-  .mv-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:6px}
+  .mv-foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+  .mv-over{outline:2px dashed #fff;outline-offset:4px;border-radius:10px}
+  .mv-row.mv-sel{background:#121212;margin:0 -10px;padding-left:10px;padding-right:10px;border-radius:10px}
+  .mv-k{display:inline-block;border:1px solid #333;border-radius:5px;padding:0 5px;font-size:11px;color:#ccc}
   `;
   const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st);
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -39,15 +42,26 @@
     ready: ["video ready", "ok"], error: ["video failed: " + (v.error || "unknown"), "err"], missing: ["video file missing, make it again", "err"], replaced: ["making video\u2026", ""],
   }[v.status] || [v.status, ""]);
 
-  /* pick a photo, upload it as the cover for this beat */
-  function pickPhoto(slug, after) {
+  /* pick a photo file */
+  function pickPhoto(cb) {
     const inp = el("input"); inp.type = "file"; inp.accept = "image/jpeg,image/png,image/webp";
-    inp.onchange = async () => {
-      const f = inp.files[0]; if (!f) return;
-      try { const j = await getJSON(`${API}/${encodeURIComponent(slug)}/cover`, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f }); after(j); }
-      catch (e) { after(null, e.message); }
-    };
+    inp.onchange = () => { if (inp.files[0]) cb(inp.files[0]); };
     inp.click();
+  }
+  /* the image in a paste (ctrl+v) or drop, if there is one */
+  const imageFrom = dt => {
+    if (!dt) return null;
+    for (const f of dt.files || []) if (/^image\//.test(f.type)) return f;
+    for (const it of dt.items || []) if (it.kind === "file" && /^image\//.test(it.type)) { const f = it.getAsFile(); if (f) return f; }
+    return null;
+  };
+  /* "paste photo" button: reads the clipboard directly (the browser may ask permission once) */
+  async function clipboardImage() {
+    if (!navigator.clipboard?.read) throw new Error("press ctrl+v to paste instead");
+    let items;
+    try { items = await navigator.clipboard.read(); } catch { throw new Error("press ctrl+v to paste instead"); }
+    for (const it of items) { const t = it.types.find(x => /^image\//.test(x)); if (t) { const blob = await it.getType(t); return new File([blob], "pasted." + (t.split("/")[1] || "png"), { type: t }); } }
+    throw new Error("no picture on your clipboard. copy one first (snipping tool, right click > copy image)");
   }
 
   /* poll until the video is done */
@@ -68,6 +82,7 @@
     const thumbImg = big ? thumb.firstChild : thumb;
     const s = el("div", "mv-s");
     const photoBtn = el("button", "mv-a");
+    const pasteBtn = el("button", "mv-a", "paste photo");
     const dl = el("a", "mv-a pri", "download video");
     const redo = el("button", "mv-a", "make again");
     const paint = info => {
@@ -82,15 +97,28 @@
       redo.style.display = b.hasCover && ["error", "missing"].includes(b.video?.status) ? "" : "none";
       if (["rendering", "replaced"].includes(b.video?.status) || (b.video?.status === "waiting" && b.hasFull)) watch(b.slug, paint);
     };
-    photoBtn.onclick = () => { s.textContent = "uploading photo\u2026"; s.className = "mv-s"; pickPhoto(b.slug, (j, err) => err ? (s.textContent = err, s.className = "mv-s err") : paint(j)); };
+    const upload = async f => {
+      s.textContent = "uploading photo\u2026"; s.className = "mv-s";
+      try { paint(await getJSON(`${API}/${encodeURIComponent(b.slug)}/cover`, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f })); }
+      catch (e) { s.textContent = e.message; s.className = "mv-s err"; }
+    };
+    wrap._upload = upload;
+    photoBtn.onclick = () => pickPhoto(upload);
+    pasteBtn.onclick = async () => { try { upload(await clipboardImage()); } catch (e) { s.textContent = e.message; s.className = "mv-s err"; } };
+    /* drag a photo onto it */
+    wrap.addEventListener("dragover", e => { e.preventDefault(); wrap.classList.add("mv-over"); });
+    wrap.addEventListener("dragleave", () => wrap.classList.remove("mv-over"));
+    wrap.addEventListener("drop", e => { e.preventDefault(); wrap.classList.remove("mv-over"); const f = imageFrom(e.dataTransfer); if (f) upload(f); });
+    /* in the list, the row under your mouse is the one ctrl+v goes to */
+    if (!big) { const pick = () => { document.querySelectorAll(".mv-row.mv-sel").forEach(r => r.classList.remove("mv-sel")); wrap.classList.add("mv-sel"); }; wrap.addEventListener("mouseenter", pick); wrap.addEventListener("click", pick); }
     redo.onclick = async () => { try { paint(await getJSON(`${API}/${encodeURIComponent(b.slug)}/video`, { method: "POST" })); } catch (e) { s.textContent = e.message; s.className = "mv-s err"; } };
     if (big) {
-      const acts = el("div", "mv-foot"); acts.append(redo, photoBtn, dl);
+      const acts = el("div", "mv-foot"); acts.append(redo, pasteBtn, photoBtn, dl);
       wrap.append(thumb, s, acts);
     } else {
       wrap.className = "mv-row";
       const meta = el("div", "mv-meta"); meta.append(el("div", "mv-n", esc(b.name)), s);
-      const acts = el("div", "mv-acts"); acts.append(redo, photoBtn, dl);
+      const acts = el("div", "mv-acts"); acts.append(redo, pasteBtn, photoBtn, dl);
       wrap.append(thumb, meta, acts);
     }
     paint(b);
@@ -113,7 +141,7 @@
     if (!b || document.querySelector(".mv-bd")) return;
     const { card, close } = modal(false);
     const h = el("div", "mv-h", `<b>video for ${esc(b.name)}</b>`); const x = el("button", "mv-x", "\u00d7"); x.onclick = close; h.appendChild(x);
-    card.append(h, el("p", "mv-sub", b.hasCover ? "this beat already has a photo, so the video is being remade with the new audio." : "add a photo to make a type beat video. the photo is only used for the video, it isn't shown on the site."));
+    card.append(h, el("p", "mv-sub", b.hasCover ? "this beat already has a photo, so the video is being remade with the new audio." : "add a photo to make a type beat video: paste one with <span class='mv-k'>ctrl</span> + <span class='mv-k'>v</span>, drag one in, or pick a file. the photo is only used for the video, it isn't shown on the site."));
     card.append(beatControls(b, { big: true }));
     const skip = el("button", "mv-a", "skip"); skip.onclick = close;
     const f = el("div", "mv-foot"); f.style.marginTop = "10px"; f.appendChild(skip); card.appendChild(f);
@@ -123,7 +151,7 @@
   async function openList() {
     const { card, close } = modal(true);
     const h = el("div", "mv-h", "<b>type beat videos</b>"); const x = el("button", "mv-x", "\u00d7"); x.onclick = close; h.appendChild(x);
-    card.append(h, el("p", "mv-sub", "1920\u00d71080, black background, photo cropped to a 1000px square. photos are only used for videos, never shown on the site."));
+    card.append(h, el("p", "mv-sub", "1920\u00d71080, black background, photo cropped to a 1000px square. to paste a photo, point at a beat and press <span class='mv-k'>ctrl</span> + <span class='mv-k'>v</span>. photos are only used for videos, never shown on the site."));
     const list = el("div", null, "<p class='mv-sub'>loading\u2026</p>"); card.appendChild(list);
     try {
       const beats = await getJSON(API);
@@ -136,6 +164,16 @@
       }
     } catch (e) { list.innerHTML = `<p class="mv-sub" style="color:#ff7a7a">${esc(e.message)}</p>`; }
   }
+
+  /* ctrl+v while the popup or list is open: the copied picture becomes the photo */
+  document.addEventListener("paste", e => {
+    const card = document.querySelector(".mv-bd .mv-card"); if (!card) return;
+    const f = imageFrom(e.clipboardData);
+    const target = card.querySelector(".mv-sel") || (card.querySelectorAll("[data-mv]").length === 1 ? card.querySelector("[data-mv]") : null);
+    if (!f) { if (target) { const st = target.querySelector(".mv-s"); st.textContent = "no picture on your clipboard. copy one first"; st.className = "mv-s err"; } return; }
+    e.preventDefault();
+    if (target && target._upload) target._upload(f);
+  });
 
   /* notice when an mp3 upload finishes (fetch or XMLHttpRequest) */
   const MP3 = /\/api\/admin\/beats\/([^/?#]+)\/full(?:[?#]|$)/;
