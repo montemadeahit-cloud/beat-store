@@ -38,7 +38,9 @@
   .mv-zone:hover{border-color:#777}.mv-zone.ok{border-style:solid;border-color:#3a3a3a}
   .mv-zone b{display:block;font-size:14px;margin-bottom:3px}.mv-zone span{color:#8f8f8f;font-size:12px;word-break:break-all}
   .mv-zone.ok>span{color:#9be89b}
-  .mv-rh{margin:22px 0 4px}
+  .mv-rh{margin:22px 0 4px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.mv-rh .mv-sub{margin:0}
+  .mv-store{color:#8f8f8f;font-size:12px;margin:-6px 0 12px}
+  .mv-a.mv-warn{background:#3a1212;border-color:#7a2a2a;color:#ffb3b3}
   .mv-a[disabled]{opacity:.35;pointer-events:none}
   .mv-over{outline:2px dashed #fff;outline-offset:4px;border-radius:10px}
   .mv-row.mv-sel{background:#121212;margin:0 -10px;padding-left:10px;padding-right:10px;border-radius:10px}
@@ -54,6 +56,19 @@
     none: ["no video yet", ""], waiting: ["photo added, waiting for the mp3", ""], rendering: ["making video\u2026", ""],
     ready: ["video ready", "ok"], error: ["video failed: " + (v.error || "unknown"), "err"], missing: ["video file missing, make it again", "err"], replaced: ["making video\u2026", ""],
   }[v.status] || [v.status, ""]);
+
+  /* a delete button that asks "sure?" on the first click */
+  const confirmBtn = (text, onYes) => {
+    const b = el("button", "mv-a", text); let t;
+    b.onclick = async () => {
+      if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "sure?"; b.classList.add("mv-warn"); t = setTimeout(() => { b.dataset.sure = ""; b.textContent = text; b.classList.remove("mv-warn"); }, 3000); return; }
+      clearTimeout(t); b.disabled = true;
+      try { await onYes(); } catch (e) { b.textContent = "failed"; }
+      b.dataset.sure = ""; b.disabled = false; b.classList.remove("mv-warn"); if (b.textContent === "sure?") b.textContent = text;
+    };
+    return b;
+  };
+  let refreshStorage = () => {};
 
   /* pick a photo file */
   function pickPhoto(cb) {
@@ -98,6 +113,7 @@
     const pasteBtn = el("button", "mv-a", "paste photo");
     const dl = el("a", "mv-a pri", "download video");
     const redo = el("button", "mv-a", "make again");
+    const delVid = confirmBtn("delete video", async () => { paint(await getJSON(`${API}/${encodeURIComponent(b.slug)}/video`, { method: "DELETE" })); refreshStorage(); });
     const paint = info => {
       b = { ...b, ...info };
       thumbImg.style.backgroundImage = b.hasCover ? `url("${API}/${encodeURIComponent(b.slug)}/cover?t=${b.video?.at || Date.now()}")` : "";
@@ -107,7 +123,8 @@
       const ready = b.video?.status === "ready" && b.video.url;
       dl.style.display = ready ? "" : "none";
       if (ready) { dl.href = b.video.url; dl.setAttribute("download", ""); }
-      redo.style.display = b.hasCover && ["error", "missing"].includes(b.video?.status) ? "" : "none";
+      redo.style.display = b.hasCover && ["error", "missing", "none"].includes(b.video?.status) && b.hasFull !== false ? "" : "none";
+      delVid.style.display = ready && !big ? "" : "none";
       if (["rendering", "replaced"].includes(b.video?.status) || (b.video?.status === "waiting" && b.hasFull)) watch(b.slug, paint);
     };
     const upload = async f => {
@@ -131,7 +148,7 @@
     } else {
       wrap.className = "mv-row";
       const meta = el("div", "mv-meta"); meta.append(el("div", "mv-n", esc(b.name)), s);
-      const acts = el("div", "mv-acts"); acts.append(redo, pasteBtn, photoBtn, dl);
+      const acts = el("div", "mv-acts"); acts.append(delVid, redo, pasteBtn, photoBtn, dl);
       wrap.append(thumb, meta, acts);
     }
     paint(b);
@@ -170,7 +187,13 @@
     const tq = el("button", "mv-tab", "quick video"), tb = el("button", "mv-tab", "store beats");
     tabs.append(tq, tb);
     const body = el("div");
-    card.append(h, tabs, body);
+    const store = el("div", "mv-store");
+    card.append(h, tabs, store, body);
+    refreshStorage = () => getJSON("/api/admin/videos/storage").then(r => {
+      const mb = r.bytes / 1048576;
+      store.textContent = `videos + photos are using ${mb < 1 ? mb.toFixed(2) : mb < 1024 ? mb.toFixed(0) : (mb / 1024).toFixed(1)} ${mb < 1024 ? "MB" : "GB"} on your server (${r.beatVideos} store beat video${r.beatVideos === 1 ? "" : "s"}, ${r.quickVideos} quick video${r.quickVideos === 1 ? "" : "s"})`;
+    }).catch(() => { store.textContent = ""; });
+    refreshStorage();
     const show = t => {
       lastTab = t; tq.classList.toggle("on", t === "quick"); tb.classList.toggle("on", t === "beats");
       body.innerHTML = ""; body.appendChild(t === "quick" ? quickPanel() : beatsPanel());
@@ -213,7 +236,10 @@
     const dl = el("a", "mv-a pri", "download video"); dl.style.display = "none";
     const again = el("button", "mv-a", "make another"); again.style.display = "none";
     const acts = el("div", "mv-foot"); acts.append(pasteBtn, again, go, dl);
-    const recentH = el("p", "mv-sub mv-rh", "recent quick videos (kept 7 days)"), recent = el("div");
+    const recentH = el("div", "mv-rh"), recent = el("div");
+    const clearOld = confirmBtn("delete older than 1 day", async () => { await getJSON(`${QAPI}?olderThan=1`, { method: "DELETE" }); loadRecent(); refreshStorage(); });
+    const clearAll = confirmBtn("delete all", async () => { await getJSON(QAPI, { method: "DELETE" }); loadRecent(); refreshStorage(); });
+    recentH.append(el("span", "mv-sub", "recent quick videos (deleted automatically after 7 days)"), el("span", "mv-acts")); recentH.lastChild.append(clearOld, clearAll);
     box.append(name, zones, prev, s, acts, recentH, recent);
 
     const msg = (t, cls = "") => { s.textContent = t; s.className = "mv-s " + cls; };
@@ -269,7 +295,7 @@
         if (info.status !== "ready") throw new Error("video failed: " + (info.error || "unknown"));
         msg("video ready", "ok");
         dl.href = info.url; dl.setAttribute("download", ""); dl.style.display = ""; go.style.display = "none"; again.style.display = "";
-        loadRecent();
+        loadRecent(); refreshStorage();
       } catch (e) { msg(e.message, "err"); }
       busy = false; ready();
     };
@@ -285,8 +311,7 @@
           meta.append(el("div", "mv-s " + c, esc(t)));
           const a2 = el("div", "mv-acts");
           if (q.url) { const d = el("a", "mv-a pri", "download"); d.href = q.url; d.setAttribute("download", ""); a2.appendChild(d); }
-          const del = el("button", "mv-a", "delete");
-          del.onclick = async () => { if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "sure?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "delete"; }, 3000); return; } try { await getJSON(`${QAPI}/${q.id}`, { method: "DELETE" }); row.remove(); } catch (e) { del.textContent = "failed"; } };
+          const del = confirmBtn("delete", async () => { await getJSON(`${QAPI}/${q.id}`, { method: "DELETE" }); row.remove(); if (!recent.children.length) recentH.style.display = "none"; refreshStorage(); });
           a2.appendChild(del);
           row.append(th, meta, a2); recent.appendChild(row);
         }
@@ -330,15 +355,38 @@
     return xo.apply(this, arguments);
   };
 
-  /* the "videos" button shows only while logged in */
-  let btn = null;
-  async function checkAuth() {
-    try {
-      const me = await getJSON("/api/admin/me");
-      if (me.authed && (!btn || !btn.isConnected)) { btn = el("button", "mv-btn", "videos"); btn.onclick = () => openList(); document.body.appendChild(btn); }
-      if (!me.authed && btn) { btn.remove(); btn = null; }
-    } catch {}
+  /* the "videos" button, only while logged in: next to "view site" in your admin header if it's there, otherwise bottom right */
+  let btn = null, top = null;
+  const findViewSite = () => [...document.querySelectorAll("a,button")].find(e => !e.closest(".mv-bd") && e !== top && /^view site\b/i.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 24 && e.offsetParent !== null);
+  function placeButtons(authed) {
+    if (!authed) { btn?.remove(); top?.remove(); btn = top = null; return; }
+    const vs = findViewSite();
+    if (vs) {
+      if (!top || !top.isConnected || top.previousElementSibling !== vs) {
+        top?.remove();
+        top = document.createElement(vs.tagName === "A" ? "a" : "button");
+        top.className = vs.className; top.textContent = "videos"; top.dataset.mvTop = "1";
+        top.style.cssText = vs.style.cssText; // look exactly like "view site"
+        const cs = getComputedStyle(vs);
+        for (const k of ["color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform", "textDecoration", "lineHeight", "background", "border", "padding", "cursor"]) top.style[k] = cs[k];
+        if (top.tagName === "A") top.href = "#videos"; else top.type = "button";
+        top.onclick = e => { e.preventDefault(); openList(); };
+        const ps = getComputedStyle(vs.parentElement);
+        if (!/flex|grid/.test(ps.display) || ps.columnGap === "normal" || ps.columnGap === "0px") top.style.marginLeft = "18px";
+        vs.after(top);
+      }
+      btn?.remove(); btn = null;
+    } else if (!btn || !btn.isConnected) {
+      top?.remove(); top = null;
+      btn = el("button", "mv-btn", "videos"); btn.onclick = () => openList(); document.body.appendChild(btn);
+    }
   }
+  let authed = false;
+  async function checkAuth() {
+    try { authed = !!(await getJSON("/api/admin/me")).authed; } catch {}
+    placeButtons(authed);
+  }
+  new MutationObserver(() => { if (authed && ((top && !top.isConnected) || (!top && findViewSite()))) placeButtons(true); }).observe(document.documentElement, { childList: true, subtree: true });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", checkAuth); else checkAuth();
   setInterval(checkAuth, 5000);
 })();
