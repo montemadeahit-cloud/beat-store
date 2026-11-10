@@ -41,6 +41,17 @@ section{padding:41px 0 18px}
 .tabs{display:flex;gap:24px;align-items:baseline;flex-wrap:wrap}
 .tab{background:none;border:0;padding:0;cursor:pointer;font-weight:900;font-size:clamp(30px,4.6vw,44px);letter-spacing:-.035em;line-height:.9;color:#5a5a5a;transition:color .2s}
 .tab:hover{color:#8f8f8f}.tab.on{color:var(--w);cursor:default}
+.swrap{position:relative;align-self:center;display:inline-flex;align-items:center}
+.swrap.off{visibility:hidden} /* catalog only */
+.swrap svg{position:absolute;left:13px;width:15px;height:15px;fill:none;stroke:var(--g);stroke-width:2.4;stroke-linecap:round;pointer-events:none;transition:stroke .15s}
+#sq{width:168px;-webkit-appearance:none;appearance:none;background:none;border:1px solid var(--hair);border-radius:999px;padding:7px 30px 7px 34px;color:var(--w);font:inherit;font-size:14px;font-weight:500;line-height:normal;outline:none;transition:border-color .15s}
+#sq::placeholder{color:var(--g);opacity:1}
+#sq::-webkit-search-cancel-button,#sq::-webkit-search-decoration{-webkit-appearance:none;display:none}
+#sq:hover,#sq:focus{border-color:rgba(255,255,255,.4)}
+.swrap:focus-within svg,.swrap.set svg{stroke:var(--w)}
+.sx{position:absolute;right:6px;width:24px;height:24px;border:0;border-radius:50%;background:none;color:var(--g);font-size:18px;line-height:1;cursor:pointer;padding:0}
+.sx:hover{color:var(--w)}.sx[hidden]{display:none}
+@media (pointer:coarse){#sq{font-size:16px}} /* stops iphones zooming in when you tap it */
 .fwrap{position:relative;align-self:center}.fwrap[hidden]{display:none}
 .fwrap.off{visibility:hidden} /* keeps its spot on the featured tab so nothing shifts */
 .fbtn{width:168px;justify-content:space-between}#flab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -297,7 +308,7 @@ main{overflow-x:clip}
 
 <main id="top"><div class="wrap">
   <div class="intro"><h1>shop beats</h1></div>
-  <section id="featSec"><div class="head tabs" role="tablist"><button class="tab on" id="tabF" role="tab" aria-selected="true" aria-controls="feat">featured</button><button class="tab" id="tabA" role="tab" aria-selected="false" aria-controls="list">catalog</button><div class="fwrap" id="fwrap" hidden><button class="fbtn" id="fbtn" aria-haspopup="true" aria-expanded="false"><span id="flab">filter by genre</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><div class="fmenu" id="fmenu" role="menu" hidden></div></div></div>
+  <section id="featSec"><div class="head tabs" role="tablist"><button class="tab on" id="tabF" role="tab" aria-selected="true" aria-controls="feat">featured</button><button class="tab" id="tabA" role="tab" aria-selected="false" aria-controls="list">catalog</button><div class="swrap off" id="swrap"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg><input id="sq" type="search" placeholder="search beats" aria-label="search beats by name" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"><button class="sx" id="sx" type="button" aria-label="clear search" hidden>×</button></div><div class="fwrap" id="fwrap" hidden><button class="fbtn" id="fbtn" aria-haspopup="true" aria-expanded="false"><span id="flab">filter by genre</span><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><div class="fmenu" id="fmenu" role="menu" hidden></div></div></div>
     <div class="fbox" id="feat" role="tabpanel"></div><div class="list" id="list" role="tabpanel" hidden></div></section>
   <div class="intro contact"><p id="msg">for all inquiries &amp; custom work, please email me directly at <a href="mailto:montemadeahit@gmail.com">montemadeahit@gmail.com</a></p></div>
   <section class="tees" id="tees">
@@ -638,6 +649,7 @@ function showTab(all){
   $("tabF").setAttribute("aria-selected",!all);$("tabA").setAttribute("aria-selected",all);
   $("feat").hidden=all;$("list").hidden=!all;if(all)$("list").scrollTop=0;
   $("fwrap").hidden=GENRES.length<2;$("fwrap").classList.toggle("off",!all);if(!all)closeF();
+  $("swrap").classList.toggle("off",!all);
 }
 /* catalog genre filter (genres come from the beats themselves) */
 const GENRES=[...new Set(BEATS.map(b=>(b.genre||"").trim().toLowerCase()).filter(Boolean))].sort();
@@ -647,12 +659,23 @@ function renderF(){
   const n=g=>BEATS.filter(b=>!g||(b.genre||"").trim().toLowerCase()===g).length;
   $("fmenu").innerHTML=["",...GENRES].map(g=>`<button role="menuitemradio" aria-checked="${g===genre}" class="${g===genre?"on":""}" data-g="${esc(g)}"><span>${g?esc(g):"all genres"}</span><span class="c">${n(g)}</span></button>`).join("");
 }
+/* catalog search: shows only beats whose name matches (works together with the genre filter) */
+let query="";
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+function applyFilter(){
+  const q=norm(query);let shown=0;
+  els.forEach(([el,b])=>{if(el.parentNode!==$("list"))return;const ok=(!genre||(b.genre||"").trim().toLowerCase()===genre)&&(!q||norm(b.name).includes(q));el.hidden=!ok;if(ok)shown++});
+  let e=$("fempty");if(!shown){if(!e){e=document.createElement("p");e.id="fempty";e.className="fempty";$("list").appendChild(e)}e.textContent=q?`no beats called "${query.trim()}"${genre?` in ${genre}`:""}.`:"no beats in this genre yet."}else if(e)e.remove();
+  $("list").scrollTop=0;
+}
+function setQuery(v){query=v;$("sx").hidden=!v;$("swrap").classList.toggle("set",!!v.trim());applyFilter()}
+$("sq").addEventListener("input",e=>setQuery(e.target.value));
+$("sq").addEventListener("keydown",e=>{if(e.key==="Escape"&&$("sq").value){e.stopPropagation();$("sq").value="";setQuery("")}else if(e.key==="Enter")$("sq").blur()});
+$("sx").onclick=()=>{$("sq").value="";setQuery("");$("sq").focus()};
 function setGenre(g){
-  genre=g;let shown=0;
-  els.forEach(([el,b])=>{if(el.parentNode!==$("list"))return;const ok=!g||(b.genre||"").trim().toLowerCase()===g;el.hidden=!ok;if(ok)shown++});
+  genre=g;
   $("flab").textContent=g||"filter by genre";$("fbtn").classList.toggle("set",!!g);
-  let e=$("fempty");if(!shown){if(!e){e=document.createElement("p");e.id="fempty";e.className="fempty";$("list").appendChild(e)}e.textContent="no beats in this genre yet."}else if(e)e.remove();
-  $("list").scrollTop=0;closeF();
+  applyFilter();closeF();
 }
 $("fbtn").onclick=e=>{e.stopPropagation();const open=$("fmenu").hidden;if(open)renderF();$("fmenu").hidden=!open;$("fbtn").setAttribute("aria-expanded",open)};
 $("fmenu").onclick=e=>{const t=e.target.closest("[data-g]");if(t)setGenre(t.dataset.g)};
