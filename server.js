@@ -348,37 +348,72 @@ function queueRender(slug) {
   b.video = { status: "rendering", job, at: Date.now() }; saveDB();
   renderChain = renderChain.then(() => renderVideo(slug, job)).catch(e => console.error("render chain", e));
 }
-function renderVideo(slug, job) {
+/* photo + audio -> mp4. resolves {ok:true} or {ok:false, error} */
+function ffmpegRender(cover, audio, out) {
   return new Promise(resolve => {
-    let finished = false;
-    const done = patch => {
-      if (finished) return; finished = true;
-      const e = DB.find(x => x.slug === slug);
-      if (e && e.video?.job === job) { e.video = { ...patch, at: Date.now() }; saveDB(); } // ignore if a newer render replaced this one
-      if (patch.status === "error") console.error("video failed", slug, patch.error);
-      resolve();
-    };
-    const b = DB.find(x => x.slug === slug);
-    if (!b || b.video?.job !== job) return done({ status: "replaced" });
-    if (!fs.existsSync(coverPath(b)) || !fs.existsSync(fullPath(slug))) return done({ status: "error", error: "needs both the mp3 and a cover photo" });
-    const { w, h, photo } = VIDEO_LAYOUT, out = videoPath(slug), tmp = out + ".tmp.mp4";
+    let finished = false; const done = r => { if (!finished) { finished = true; resolve(r); } };
+    const { w, h, photo } = VIDEO_LAYOUT, tmp = out + ".tmp.mp4";
     const vf = `crop='min(iw,ih)':'min(iw,ih)',scale=${photo}:${photo}:flags=lanczos,setsar=1,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p`;
     const args = ["-y", "-hide_banner", "-loglevel", "error",
-      "-loop", "1", "-framerate", "2", "-i", coverPath(b), "-i", fullPath(slug),
+      "-loop", "1", "-framerate", "2", "-i", cover, "-i", audio,
       "-map", "0:v:0", "-map", "1:a:0", "-vf", vf,
       "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", "18", "-r", "2", "-g", "10",
       "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-shortest", "-movflags", "+faststart", tmp];
     let err = "";
     const p = spawn(FFMPEG, args);
     p.stderr.on("data", d => { err = (err + d).slice(-2000); });
-    p.on("error", e => done({ status: "error", error: e.code === "ENOENT" ? "ffmpeg isn't installed on the server (add ffmpeg-static to package.json)" : e.message }));
+    p.on("error", e => done({ ok: false, error: e.code === "ENOENT" ? "ffmpeg isn't installed on the server (add ffmpeg-static to package.json)" : e.message }));
     p.on("close", code => {
-      if (code === 0) { try { fs.renameSync(tmp, out); return done({ status: "ready" }); } catch (e) { return done({ status: "error", error: e.message }); } }
+      if (code === 0) { try { fs.renameSync(tmp, out); return done({ ok: true }); } catch (e) { return done({ ok: false, error: e.message }); } }
       fs.rm(tmp, { force: true }, () => {});
-      done({ status: "error", error: (err.trim().split("\n").pop() || "ffmpeg failed").slice(0, 200) });
+      done({ ok: false, error: (err.trim().split("\n").pop() || "ffmpeg failed").slice(0, 200) });
     });
   });
 }
+async function renderVideo(slug, job) {
+  const done = patch => {
+    const e = DB.find(x => x.slug === slug);
+    if (e && e.video?.job === job) { e.video = { ...patch, at: Date.now() }; saveDB(); } // ignore if a newer render replaced this one
+    if (patch.status === "error") console.error("video failed", slug, patch.error);
+  };
+  const b = DB.find(x => x.slug === slug);
+  if (!b || b.video?.job !== job) return done({ status: "replaced" });
+  if (!fs.existsSync(coverPath(b)) || !fs.existsSync(fullPath(slug))) return done({ status: "error", error: "needs both the mp3 and a cover photo" });
+  const r = await ffmpegRender(coverPath(b), fullPath(slug), videoPath(slug));
+  done(r.ok ? { status: "ready" } : { status: "error", error: r.error });
+}
+
+/* quick videos: any audio + photo -> mp4, not added to the store. kept 7 days, then cleaned up */
+const QUICK_DIR = path.join(DATA_DIR, "quick");
+fs.mkdirSync(QUICK_DIR, { recursive: true });
+const QUICK_KEEP = 7 * 24 * 3600 * 1000;
+const quickDir = id => path.join(QUICK_DIR, /^[a-z0-9]+$/.test(String(id)) ? String(id) : "_invalid_");
+const quickMeta = id => { try { return JSON.parse(fs.readFileSync(path.join(quickDir(id), "meta.json"), "utf8")); } catch { return null; } };
+const saveQuick = m => fs.writeFileSync(path.join(quickDir(m.id), "meta.json"), JSON.stringify(m));
+const quickOut = m => ({ id: m.id, name: m.name, status: m.status, error: m.error || "", at: m.at, hasCover: !!m.cover, hasAudio: !!m.audio,
+  url: m.status === "ready" && fs.existsSync(path.join(quickDir(m.id), "video.mp4")) ? `/api/admin/quick/${m.id}/video` : "" });
+function queueQuick(id) {
+  const m = quickMeta(id); if (!m || !m.audio || !m.cover) return;
+  m.status = "rendering"; m.job = crypto.randomBytes(4).toString("hex"); m.at = Date.now(); saveQuick(m);
+  const job = m.job;
+  renderChain = renderChain.then(async () => {
+    const d = quickDir(id);
+    const r = await ffmpegRender(path.join(d, m.cover), path.join(d, m.audio), path.join(d, "video.mp4"));
+    const now = quickMeta(id); if (!now || now.job !== job) return; // deleted or remade meanwhile
+    Object.assign(now, r.ok ? { status: "ready", error: "" } : { status: "error", error: r.error }, { at: Date.now() }); saveQuick(now);
+    if (!r.ok) console.error("quick video failed", id, r.error);
+  }).catch(e => console.error("render chain", e));
+}
+function cleanQuick() {
+  for (const id of fs.readdirSync(QUICK_DIR)) {
+    const m = quickMeta(id);
+    if (!m || Date.now() - (m.created || 0) > QUICK_KEEP) fs.rm(quickDir(id), { recursive: true, force: true }, () => {});
+    else if (m.status === "rendering") queueQuick(id); // server restarted mid-render
+  }
+}
+try { cleanQuick(); } catch (e) { console.error("quick cleanup", e); }
+setInterval(() => { try { for (const id of fs.readdirSync(QUICK_DIR)) { const m = quickMeta(id); if (m && Date.now() - (m.created || 0) > QUICK_KEEP) fs.rm(quickDir(id), { recursive: true, force: true }, () => {}); } } catch {} }, 3600 * 1000);
+
 for (const b of DB) if (b.video?.status === "rendering") queueRender(b.slug); // server restarted mid-render: start it again
 
 const app = express();
@@ -563,6 +598,9 @@ const videoInfo = b => {
   };
 };
 const MAX_COVER = 25 * 1024 * 1024;
+const imageExt = buf => buf[0] === 0xff && buf[1] === 0xd8 ? "jpg"
+  : buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? "png"
+  : buf.subarray(0, 4).toString() === "RIFF" && buf.subarray(8, 12).toString() === "WEBP" ? "webp" : "";
 app.put("/api/admin/beats/:slug/cover", requireAdmin, (req, res) => {
   const b = DB.find(x => x.slug === req.params.slug);
   if (!b) return res.status(404).json({ error: "beat not found" });
@@ -571,10 +609,7 @@ app.put("/api/admin/beats/:slug/cover", requireAdmin, (req, res) => {
   req.on("data", c => { if (dead) return; n += c.length; if (n > MAX_COVER) { dead = true; res.status(413).set("Connection", "close").json({ error: "photo is over 25MB" }); req.resume(); return; } parts.push(c); });
   req.on("end", () => {
     if (dead) return;
-    const buf = Buffer.concat(parts);
-    const ext = buf[0] === 0xff && buf[1] === 0xd8 ? "jpg"
-      : buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? "png"
-      : buf.subarray(0, 4).toString() === "RIFF" && buf.subarray(8, 12).toString() === "WEBP" ? "webp" : "";
+    const buf = Buffer.concat(parts), ext = imageExt(buf);
     if (!ext) return res.status(400).json({ error: "use a jpg, png or webp photo" });
     if (b.cover) fs.rm(coverPath(b), { force: true }, () => {});
     b.cover = `${b.slug}-${Date.now()}.${ext}`;
@@ -607,6 +642,74 @@ app.get("/api/admin/beats/:slug/video", requireAdmin, (req, res) => {
   const b = getBeat(req.params.slug);
   if (!b || !fs.existsSync(videoPath(b.slug))) return res.status(404).send("no video yet");
   res.download(videoPath(b.slug), videoName(b));
+});
+
+/* ---------- quick videos (not in the store) ---------- */
+app.get("/api/admin/quick", requireAdmin, (_req, res) => {
+  const list = fs.readdirSync(QUICK_DIR).map(quickMeta).filter(m => m && m.audio).sort((a, b) => b.created - a.created).map(quickOut);
+  res.set("Cache-Control", "no-store").json(list);
+});
+const MAX_QUICK_AUDIO = 500 * 1024 * 1024;
+app.post("/api/admin/quick", requireAdmin, (req, res) => { // start one: {name}
+  const id = Date.now().toString(36) + crypto.randomBytes(3).toString("hex");
+  fs.mkdirSync(quickDir(id), { recursive: true });
+  const name = String(req.body?.name || "").replace(/[\u0000-\u001f]/g, "").trim().slice(0, 120) || "type beat";
+  const m = { id, name, status: "new", created: Date.now(), at: Date.now() }; saveQuick(m);
+  res.json(quickOut(m));
+});
+app.put("/api/admin/quick/:id/audio", requireAdmin, (req, res) => { // any audio ffmpeg can read: mp3, wav, m4a, flac...
+  const m = quickMeta(req.params.id); if (!m) return res.status(404).json({ error: "not found" });
+  if (Number(req.headers["content-length"] || 0) > MAX_QUICK_AUDIO) return res.status(413).json({ error: "audio is over 500MB" });
+  const dest = path.join(quickDir(m.id), "audio"), tmp = dest + ".tmp", out = fs.createWriteStream(tmp);
+  let n = 0, dead = false;
+  const fail = (code, msg) => { if (dead) return; dead = true; req.unpipe(out); out.destroy(); fs.rm(tmp, { force: true }, () => {}); res.status(code).set("Connection", "close").json({ error: msg }); req.resume(); };
+  req.on("data", c => { n += c.length; if (n > MAX_QUICK_AUDIO) fail(413, "audio is over 500MB"); });
+  req.on("aborted", () => { dead = true; out.destroy(); fs.rm(tmp, { force: true }, () => {}); });
+  out.on("error", () => fail(500, "couldn't save the audio"));
+  out.on("finish", () => {
+    if (dead) return;
+    if (!n) return fail(400, "the audio file is empty");
+    fs.renameSync(tmp, dest);
+    const now = quickMeta(m.id); now.audio = "audio"; saveQuick(now);
+    queueQuick(m.id);
+    res.json(quickOut(quickMeta(m.id)));
+  });
+  req.pipe(out);
+});
+app.put("/api/admin/quick/:id/cover", requireAdmin, (req, res) => {
+  const m = quickMeta(req.params.id); if (!m) return res.status(404).json({ error: "not found" });
+  if (Number(req.headers["content-length"] || 0) > MAX_COVER) return res.status(413).json({ error: "photo is over 25MB" });
+  const parts = []; let n = 0, dead = false;
+  req.on("data", c => { if (dead) return; n += c.length; if (n > MAX_COVER) { dead = true; res.status(413).set("Connection", "close").json({ error: "photo is over 25MB" }); req.resume(); return; } parts.push(c); });
+  req.on("aborted", () => { dead = true; });
+  req.on("end", () => {
+    if (dead) return;
+    const buf = Buffer.concat(parts), ext = imageExt(buf);
+    if (!ext) return res.status(400).json({ error: "use a jpg, png or webp photo" });
+    const now = quickMeta(m.id);
+    if (now.cover) fs.rm(path.join(quickDir(m.id), now.cover), { force: true }, () => {});
+    now.cover = `cover-${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(quickDir(m.id), now.cover), buf); saveQuick(now);
+    queueQuick(m.id);
+    res.json(quickOut(quickMeta(m.id)));
+  });
+});
+app.get("/api/admin/quick/:id", requireAdmin, (req, res) => {
+  const m = quickMeta(req.params.id); m ? res.set("Cache-Control", "no-store").json(quickOut(m)) : res.status(404).json({ error: "not found" });
+});
+app.get("/api/admin/quick/:id/cover", requireAdmin, (req, res) => {
+  const m = quickMeta(req.params.id); if (!m || !m.cover) return res.sendStatus(404);
+  res.sendFile(path.join(quickDir(m.id), m.cover), { headers: { "Cache-Control": "no-store" } });
+});
+app.get("/api/admin/quick/:id/video", requireAdmin, (req, res) => {
+  const m = quickMeta(req.params.id), f = m && path.join(quickDir(m.id), "video.mp4");
+  if (!m || !fs.existsSync(f)) return res.status(404).send("no video yet");
+  res.download(f, safeName(m.name) + ".mp4");
+});
+app.delete("/api/admin/quick/:id", requireAdmin, (req, res) => {
+  if (!/^[a-z0-9]+$/.test(req.params.id) || !quickMeta(req.params.id)) return res.status(404).json({ error: "not found" });
+  fs.rm(quickDir(req.params.id), { recursive: true, force: true }, () => {});
+  res.json({ ok: true });
 });
 
 /* upload an mp3 (raw file body, streamed straight to disk) */
