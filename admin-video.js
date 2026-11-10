@@ -27,6 +27,19 @@
   .mv-a.pri{background:#fff;color:#000;border-color:#fff}
   .mv-a[disabled]{opacity:.4;pointer-events:none}
   .mv-foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+  .mv-tabs{display:flex;gap:20px;margin:6px 0 14px;border-bottom:1px solid #1e1e1e}
+  .mv-tab{background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:8px 0;color:#8f8f8f;font:700 15px/1 Helvetica,Arial,sans-serif;cursor:pointer}
+  .mv-tab:hover{color:#fff}.mv-tab.on{color:#fff;border-bottom-color:#fff}
+  .mv-in{width:100%;box-sizing:border-box;background:#151515;border:1px solid #2a2a2a;border-radius:10px;padding:11px 12px;color:#fff;font:15px Helvetica,Arial,sans-serif;outline:none;margin-bottom:10px}
+  .mv-in:focus{border-color:#555}
+  .mv-zones{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  @media(max-width:520px){.mv-zones{grid-template-columns:1fr}}
+  .mv-zone{border:1.5px dashed #333;border-radius:12px;padding:14px;cursor:pointer;min-height:64px;transition:border-color .15s}
+  .mv-zone:hover{border-color:#777}.mv-zone.ok{border-style:solid;border-color:#3a3a3a}
+  .mv-zone b{display:block;font-size:14px;margin-bottom:3px}.mv-zone span{color:#8f8f8f;font-size:12px;word-break:break-all}
+  .mv-zone.ok>span{color:#9be89b}
+  .mv-rh{margin:22px 0 4px}
+  .mv-a[disabled]{opacity:.35;pointer-events:none}
   .mv-over{outline:2px dashed #fff;outline-offset:4px;border-radius:10px}
   .mv-row.mv-sel{background:#121212;margin:0 -10px;padding-left:10px;padding-right:10px;border-radius:10px}
   .mv-k{display:inline-block;border:1px solid #333;border-radius:5px;padding:0 5px;font-size:11px;color:#ccc}
@@ -148,13 +161,29 @@
   }
 
   /* list of every beat */
-  async function openList() {
+  /* the videos panel: two tabs */
+  let lastTab = "quick";
+  function openList(tab) {
     const { card, close } = modal(true);
-    const h = el("div", "mv-h", "<b>type beat videos</b>"); const x = el("button", "mv-x", "\u00d7"); x.onclick = close; h.appendChild(x);
-    card.append(h, el("p", "mv-sub", "1920\u00d71080, black background, photo cropped to a 1000px square. to paste a photo, point at a beat and press <span class='mv-k'>ctrl</span> + <span class='mv-k'>v</span>. photos are only used for videos, never shown on the site."));
-    const list = el("div", null, "<p class='mv-sub'>loading\u2026</p>"); card.appendChild(list);
-    try {
-      const beats = await getJSON(API);
+    const h = el("div", "mv-h", "<b>type beat videos</b>"); const x = el("button", "mv-x", "×"); x.onclick = close; h.appendChild(x);
+    const tabs = el("div", "mv-tabs");
+    const tq = el("button", "mv-tab", "quick video"), tb = el("button", "mv-tab", "store beats");
+    tabs.append(tq, tb);
+    const body = el("div");
+    card.append(h, tabs, body);
+    const show = t => {
+      lastTab = t; tq.classList.toggle("on", t === "quick"); tb.classList.toggle("on", t === "beats");
+      body.innerHTML = ""; body.appendChild(t === "quick" ? quickPanel() : beatsPanel());
+    };
+    tq.onclick = () => show("quick"); tb.onclick = () => show("beats");
+    show(tab || lastTab);
+  }
+
+  function beatsPanel() {
+    const box = el("div");
+    box.append(el("p", "mv-sub", "videos for beats in your store. to paste a photo, point at a beat and press <span class='mv-k'>ctrl</span> + <span class='mv-k'>v</span>. photos are only used for videos, never shown on the site."));
+    const list = el("div", null, "<p class='mv-sub'>loading…</p>"); box.appendChild(list);
+    getJSON(API).then(beats => {
       list.innerHTML = "";
       if (!beats.length) list.innerHTML = "<p class='mv-sub'>no beats yet.</p>";
       for (const b of beats) {
@@ -162,13 +191,118 @@
         if (!b.hasFull) { row.querySelector(".mv-s").textContent = (b.hasCover ? "photo added · " : "") + "upload the mp3 first"; }
         list.appendChild(row);
       }
-    } catch (e) { list.innerHTML = `<p class="mv-sub" style="color:#ff7a7a">${esc(e.message)}</p>`; }
+    }).catch(e => { list.innerHTML = `<p class="mv-sub" style="color:#ff7a7a">${esc(e.message)}</p>`; });
+    return box;
+  }
+
+  /* quick video: any audio + any photo, nothing added to the store */
+  const QAPI = "/api/admin/quick";
+  function quickPanel() {
+    const box = el("div", "mv-quick");
+    box.append(el("p", "mv-sub", "make a video from any audio file. nothing gets added to the store. 1920×1080, black background, photo cropped to a 1000px square."));
+    let audio = null, photo = null, photoUrl = "", busy = false;
+    const name = el("input", "mv-in"); name.placeholder = "video name (used for the file name)"; name.maxLength = 120;
+    const zones = el("div", "mv-zones");
+    const za = el("div", "mv-zone", "<b>audio</b><span>mp3, wav, m4a… click or drop</span>");
+    const zp = el("div", "mv-zone", "<b>photo</b><span>paste with <span class='mv-k'>ctrl</span> + <span class='mv-k'>v</span>, drop, or click</span>");
+    zones.append(za, zp);
+    const prev = el("div", "mv-big", "<i></i>"); const prevImg = prev.firstChild;
+    const s = el("div", "mv-s");
+    const pasteBtn = el("button", "mv-a", "paste photo");
+    const go = el("button", "mv-a pri", "make video");
+    const dl = el("a", "mv-a pri", "download video"); dl.style.display = "none";
+    const again = el("button", "mv-a", "make another"); again.style.display = "none";
+    const acts = el("div", "mv-foot"); acts.append(pasteBtn, again, go, dl);
+    const recentH = el("p", "mv-sub mv-rh", "recent quick videos (kept 7 days)"), recent = el("div");
+    box.append(name, zones, prev, s, acts, recentH, recent);
+
+    const msg = (t, cls = "") => { s.textContent = t; s.className = "mv-s " + cls; };
+    const ready = () => { go.disabled = busy || !(audio && photo); go.toggleAttribute("disabled", go.disabled); };
+    const setAudio = f => {
+      if (!f || busy) return; audio = f;
+      za.classList.add("ok"); za.querySelector("span").textContent = f.name;
+      if (!name.value.trim() || name.dataset.auto === "1") { name.value = f.name.replace(/\.[^.]+$/, ""); name.dataset.auto = "1"; }
+      reset(); ready();
+    };
+    const setPhoto = f => {
+      if (!f || busy) return; photo = f;
+      if (photoUrl) URL.revokeObjectURL(photoUrl); photoUrl = URL.createObjectURL(f);
+      prevImg.style.backgroundImage = `url("${photoUrl}")`;
+      zp.classList.add("ok"); zp.querySelector("span").textContent = f.name && f.name !== "image.png" ? f.name : "pasted photo";
+      reset(); ready();
+    };
+    const reset = () => { dl.style.display = "none"; again.style.display = "none"; go.style.display = ""; msg(""); };
+    name.oninput = () => { name.dataset.auto = "0"; };
+    box._paste = setPhoto;
+    const pickFile = (accept, cb) => { const i = el("input"); i.type = "file"; i.accept = accept; i.onchange = () => i.files[0] && cb(i.files[0]); i.click(); };
+    za.onclick = () => pickFile("audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.aif,.aiff", setAudio);
+    zp.onclick = () => pickFile("image/jpeg,image/png,image/webp", setPhoto);
+    for (const [z, fn, isImg] of [[za, setAudio, false], [zp, setPhoto, true]]) {
+      z.addEventListener("dragover", e => { e.preventDefault(); z.classList.add("mv-over"); });
+      z.addEventListener("dragleave", () => z.classList.remove("mv-over"));
+      z.addEventListener("drop", e => { e.preventDefault(); e.stopPropagation(); z.classList.remove("mv-over"); const f = isImg ? imageFrom(e.dataTransfer) : [...(e.dataTransfer.files || [])][0]; if (f) fn(f); });
+    }
+    box.addEventListener("dragover", e => e.preventDefault());
+    box.addEventListener("drop", e => { e.preventDefault(); for (const f of e.dataTransfer.files || []) (/^image\//.test(f.type) ? setPhoto : setAudio)(f); });
+    pasteBtn.onclick = async () => { try { setPhoto(await clipboardImage()); } catch (e) { msg(e.message, "err"); } };
+    again.onclick = () => { audio = null; za.classList.remove("ok"); za.querySelector("span").textContent = "mp3, wav, m4a… click or drop"; name.value = ""; name.dataset.auto = "1"; reset(); ready(); };
+
+    const sendFile = (url, f, onProg) => new Promise((res, rej) => {
+      const x = new XMLHttpRequest(); x.open("PUT", url); x.withCredentials = true;
+      x.setRequestHeader("Content-Type", f.type || "application/octet-stream");
+      x.upload.onprogress = e => e.lengthComputable && onProg && onProg(e.loaded / e.total);
+      x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 ? res(j) : rej(new Error(j.error || "upload failed")); };
+      x.onerror = () => rej(new Error("upload failed, check your connection"));
+      x.send(f);
+    });
+    go.onclick = async () => {
+      if (!audio || !photo || busy) return;
+      busy = true; ready();
+      try {
+        const job = await getJSON(QAPI, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.value.trim() || audio.name.replace(/\.[^.]+$/, "") }) });
+        await sendFile(`${QAPI}/${job.id}/audio`, audio, p => msg(`uploading audio… ${Math.round(p * 100)}%`));
+        msg("uploading photo…");
+        await sendFile(`${QAPI}/${job.id}/cover`, photo);
+        msg("making video…");
+        let info;
+        for (;;) { await new Promise(r => setTimeout(r, 1500)); info = await getJSON(`${QAPI}/${job.id}`); if (info.status !== "rendering") break; }
+        if (info.status !== "ready") throw new Error("video failed: " + (info.error || "unknown"));
+        msg("video ready", "ok");
+        dl.href = info.url; dl.setAttribute("download", ""); dl.style.display = ""; go.style.display = "none"; again.style.display = "";
+        loadRecent();
+      } catch (e) { msg(e.message, "err"); }
+      busy = false; ready();
+    };
+
+    function loadRecent() {
+      getJSON(QAPI).then(list => {
+        recent.innerHTML = ""; recentH.style.display = list.length ? "" : "none";
+        for (const q of list) {
+          const row = el("div", "mv-row");
+          const th = el("div", "mv-th"); if (q.hasCover) th.style.backgroundImage = `url("${QAPI}/${q.id}/cover")`;
+          const meta = el("div", "mv-meta"); meta.append(el("div", "mv-n", esc(q.name)));
+          const [t, c] = q.status === "ready" ? ["made " + new Date(q.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }), ""] : q.status === "rendering" ? ["making video…", ""] : q.status === "error" ? ["failed: " + q.error, "err"] : ["unfinished", ""];
+          meta.append(el("div", "mv-s " + c, esc(t)));
+          const a2 = el("div", "mv-acts");
+          if (q.url) { const d = el("a", "mv-a pri", "download"); d.href = q.url; d.setAttribute("download", ""); a2.appendChild(d); }
+          const del = el("button", "mv-a", "delete");
+          del.onclick = async () => { if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "sure?"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "delete"; }, 3000); return; } try { await getJSON(`${QAPI}/${q.id}`, { method: "DELETE" }); row.remove(); } catch (e) { del.textContent = "failed"; } };
+          a2.appendChild(del);
+          row.append(th, meta, a2); recent.appendChild(row);
+        }
+      }).catch(() => { recentH.style.display = "none"; });
+    }
+    loadRecent(); ready();
+    setTimeout(() => name.focus(), 50);
+    return box;
   }
 
   /* ctrl+v while the popup or list is open: the copied picture becomes the photo */
   document.addEventListener("paste", e => {
     const card = document.querySelector(".mv-bd .mv-card"); if (!card) return;
     const f = imageFrom(e.clipboardData);
+    const quick = card.querySelector(".mv-quick");
+    if (quick) { if (f) { e.preventDefault(); quick._paste(f); } return; } // quick video tab: the pasted picture is its photo (text pastes into the name box as normal)
     const target = card.querySelector(".mv-sel") || (card.querySelectorAll("[data-mv]").length === 1 ? card.querySelector("[data-mv]") : null);
     if (!f) { if (target) { const st = target.querySelector(".mv-s"); st.textContent = "no picture on your clipboard. copy one first"; st.className = "mv-s err"; } return; }
     e.preventDefault();
@@ -201,10 +335,10 @@
   async function checkAuth() {
     try {
       const me = await getJSON("/api/admin/me");
-      if (me.authed && !btn) { btn = el("button", "mv-btn", "videos"); btn.onclick = openList; document.body.appendChild(btn); }
+      if (me.authed && (!btn || !btn.isConnected)) { btn = el("button", "mv-btn", "videos"); btn.onclick = () => openList(); document.body.appendChild(btn); }
       if (!me.authed && btn) { btn.remove(); btn = null; }
     } catch {}
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", checkAuth); else checkAuth();
-  setInterval(checkAuth, 15000);
+  setInterval(checkAuth, 5000);
 })();
