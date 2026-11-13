@@ -344,6 +344,9 @@ async function fulfill(session) {
 let FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 if (!process.env.FFMPEG_PATH) { try { const m = await import("ffmpeg-static"); if (m.default) FFMPEG = m.default; } catch {} }
 const VIDEO_LAYOUT = { w: 1920, h: 1080, photo: 1000 };
+/* bump this when the video maker changes: on the next start, every finished video made by an older
+   version is remade automatically from the mp3 + photo already on the server. 2 = trailing silence cut */
+const VIDEO_VERSION = 2;
 const coverPath = b => b && b.cover ? path.join(COVER_DIR, b.cover) : "";
 const videoPath = slug => path.join(VIDEO_DIR, slug + ".mp4");
 const videoName = b => safeName(`${b.name} (prod. ${producers(b).join(" x ")})`) + ".mp4";
@@ -412,7 +415,7 @@ async function renderVideo(slug, job) {
   if (!b || b.video?.job !== job) return done({ status: "replaced" });
   if (!fs.existsSync(coverPath(b)) || !fs.existsSync(fullPath(slug))) return done({ status: "error", error: "needs both the mp3 and a cover photo" });
   const r = await ffmpegRender(coverPath(b), fullPath(slug), videoPath(slug));
-  done(r.ok ? { status: "ready" } : { status: "error", error: r.error });
+  done(r.ok ? { status: "ready", v: VIDEO_VERSION } : { status: "error", error: r.error });
 }
 
 /* quick videos: any audio + photo -> mp4, not added to the store. kept 7 days, then cleaned up */
@@ -432,7 +435,7 @@ function queueQuick(id) {
     const d = quickDir(id);
     const r = await ffmpegRender(path.join(d, m.cover), path.join(d, m.audio), path.join(d, "video.mp4"));
     const now = quickMeta(id); if (!now || now.job !== job) return; // deleted or remade meanwhile
-    Object.assign(now, r.ok ? { status: "ready", error: "" } : { status: "error", error: r.error }, { at: Date.now() }); saveQuick(now);
+    Object.assign(now, r.ok ? { status: "ready", error: "", v: VIDEO_VERSION } : { status: "error", error: r.error }, { at: Date.now() }); saveQuick(now);
     if (!r.ok) console.error("quick video failed", id, r.error);
   }).catch(e => console.error("render chain", e));
 }
@@ -441,12 +444,18 @@ function cleanQuick() {
     const m = quickMeta(id);
     if (!m || Date.now() - (m.created || 0) > QUICK_KEEP) fs.rm(quickDir(id), { recursive: true, force: true }, () => {});
     else if (m.status === "rendering") queueQuick(id); // server restarted mid-render
+    else if (m.status === "ready" && (m.v || 1) < VIDEO_VERSION) queueQuick(id); // made by an older video maker: remake it
   }
 }
 try { cleanQuick(); } catch (e) { console.error("quick cleanup", e); }
 setInterval(() => { try { for (const id of fs.readdirSync(QUICK_DIR)) { const m = quickMeta(id); if (m && Date.now() - (m.created || 0) > QUICK_KEEP) fs.rm(quickDir(id), { recursive: true, force: true }, () => {}); } } catch {} }, 3600 * 1000);
 
 for (const b of DB) if (b.video?.status === "rendering") queueRender(b.slug); // server restarted mid-render: start it again
+{ // videos made by an older video maker (e.g. before the silence fix): remake them from the files already here
+  const old = DB.filter(b => b.video?.status === "ready" && (b.video.v || 1) < VIDEO_VERSION);
+  for (const b of old) queueRender(b.slug);
+  if (old.length) console.log(`remaking ${old.length} video(s) with the new video maker`);
+}
 
 const app = express();
 app.set("trust proxy", 1);
