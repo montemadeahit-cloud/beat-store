@@ -205,8 +205,16 @@
   function beatsPanel() {
     const box = el("div");
     box.append(el("p", "mv-sub", "videos for beats in your store. to paste a photo, point at a beat and press <span class='mv-k'>ctrl</span> + <span class='mv-k'>v</span>. photos are only used for videos, never shown on the site."));
+    const allBar = el("div", "mv-foot"); allBar.style.cssText = "justify-content:flex-start;align-items:center;margin:0 0 6px";
+    const allDl = el("a", "mv-a pri", "download all videos"); allDl.href = "/api/admin/videos/all.zip"; allDl.setAttribute("download", "");
+    const allNote = el("span", "mv-s");
+    allBar.append(allDl, allNote); box.appendChild(allBar);
     const list = el("div", null, "<p class='mv-sub'>loading…</p>"); box.appendChild(list);
     getJSON(API).then(beats => {
+      const done = beats.filter(b => b.video?.status === "ready").length, busy = beats.filter(b => ["rendering", "replaced"].includes(b.video?.status) || (b.video?.status === "waiting" && b.hasFull)).length;
+      allDl.textContent = done ? `download all videos (${done})` : "download all videos";
+      allDl.toggleAttribute("disabled", !done);
+      allNote.textContent = (done ? "one .zip file" : "no finished videos yet") + (busy ? ` · ${busy} still being made, they'll be in it once they're done` : "");
       list.innerHTML = "";
       if (!beats.length) list.innerHTML = "<p class='mv-sub'>no beats yet.</p>";
       for (const b of beats) {
