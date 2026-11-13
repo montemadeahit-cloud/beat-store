@@ -60,7 +60,7 @@ const getBeat = slug => { const b = DB.find(x => x.slug === slug); return b && d
 const allBeats = () => DB.map(decorate);
 const liveBeats = () => allBeats().filter(b => b.hasFull); // visible + sellable only when the full mp3 exists
 const publicBeat = b => ({
-  slug: b.slug, name: b.name, genre: b.genre || "", prod: producers(b).join(" x "), bpm: b.bpm, price: b.price, featured: !!b.featured,
+  slug: b.slug, name: b.name, genre: b.genre || "", prod: producers(b).join(" x "), bpm: b.bpm, price: b.price, featured: !!b.featured, featPos: b.featured ? b.featPos || 0 : 0,
   peaks: Array.isArray(b.peaks) ? b.peaks : [],
   src: b.hasFull ? `/audio/${b.slug}.mp3?v=${Math.round(fs.statSync(fullPath(b.slug)).mtimeMs)}` : "",
 });
@@ -355,8 +355,33 @@ function queueRender(slug) {
   b.video = { status: "rendering", job, at: Date.now() }; saveDB();
   renderChain = renderChain.then(() => renderVideo(slug, job)).catch(e => console.error("render chain", e));
 }
+/* where the sound actually stops. a lot of DAW exports leave seconds of dead air after the fade,
+   so the video would sit on silence. scans the audio once (fast, no re-encode) and returns
+   the end of the last audible sound + a short tail, or the full length if it never goes quiet at the end. */
+const SILENCE_DB = -60, SILENCE_MIN = 1, TAIL_KEEP = 0.75;
+function audioEnd(audio) {
+  return new Promise(resolve => {
+    let err = "";
+    const p = spawn(FFMPEG, ["-hide_banner", "-stats", "-i", audio, "-map", "0:a:0", "-af", `silencedetect=n=${SILENCE_DB}dB:d=${SILENCE_MIN}`, "-f", "null", "-"]);
+    p.stderr.on("data", d => { err = (err + d).slice(-20000); });
+    p.on("error", () => resolve(null));
+    p.on("close", code => {
+      if (code !== 0) return resolve(null);
+      const times = [...err.matchAll(/time=(\d+):(\d+):([\d.]+)/g)], last = times[times.length - 1];
+      const total = last ? +last[1] * 3600 + +last[2] * 60 + +last[3] : 0;
+      if (!total) return resolve(null);
+      const starts = [...err.matchAll(/silence_start: (-?[\d.]+)/g)].map(m => +m[1]);
+      const ends = [...err.matchAll(/silence_end: ([\d.]+)/g)].map(m => +m[1]);
+      const s = starts[starts.length - 1];
+      // trailing silence = last silence that never ended, or ended at the very end of the file
+      const trailing = s != null && s > 1 && (ends.length < starts.length || ends[ends.length - 1] >= total - 0.1);
+      resolve(trailing ? Math.min(total, s + TAIL_KEEP) : total);
+    });
+  });
+}
 /* photo + audio -> mp4. resolves {ok:true} or {ok:false, error} */
-function ffmpegRender(cover, audio, out) {
+async function ffmpegRender(cover, audio, out) {
+  const end = await audioEnd(audio); // null = couldn't measure, fall back to the full file
   return new Promise(resolve => {
     let finished = false; const done = r => { if (!finished) { finished = true; resolve(r); } };
     const { w, h, photo } = VIDEO_LAYOUT, tmp = out + ".tmp.mp4";
@@ -365,7 +390,7 @@ function ffmpegRender(cover, audio, out) {
       "-loop", "1", "-framerate", "2", "-i", cover, "-i", audio,
       "-map", "0:v:0", "-map", "1:a:0", "-vf", vf,
       "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", "18", "-r", "2", "-g", "10",
-      "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-shortest", "-movflags", "+faststart", tmp];
+      "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-shortest", ...(end ? ["-t", end.toFixed(3)] : []), "-movflags", "+faststart", tmp];
     let err = "";
     const p = spawn(FFMPEG, args);
     p.stderr.on("data", d => { err = (err + d).slice(-2000); });
@@ -509,6 +534,11 @@ function cleanFields(body, partial) {
     out.price = price;
   }
   if (!partial || body.featured !== undefined) out.featured = !!body.featured;
+  if (body.featPos !== undefined) {
+    const n = Math.round(Number(body.featPos));
+    if (!(n >= 1 && n <= 5)) throw new Error("featured spot must be 1 to 5");
+    out.featPos = n;
+  }
   if (!partial || body.coprod !== undefined) out.coprod = String(body.coprod ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   if (!partial || body.genre !== undefined) out.genre = String(body.genre ?? "").trim().replace(/\s+/g, " ").slice(0, 24);
   if (body.peaks !== undefined) {
@@ -525,9 +555,25 @@ function applyFeatured(b, wasFeatured) {
   if (!b.featured) delete b.featuredAt;
   const on = DB.filter(x => x.featured).sort((x, y) => (x.featuredAt || x.added || 0) - (y.featuredAt || y.added || 0));
   const bumped = [];
-  while (on.length > MAX_FEATURED) { const old = on.shift(); if (old === b) { on.push(old); continue; } old.featured = false; delete old.featuredAt; bumped.push(old.name); }
+  while (on.length > MAX_FEATURED) { const old = on.shift(); if (old === b) { on.push(old); continue; } old.featured = false; delete old.featuredAt; delete old.featPos; bumped.push(old.name); }
+  if (!b.featured) delete b.featPos;
+  numberFeatured();
   return bumped;
 }
+/* featured order: spots 1..n, top to bottom on the homepage. new featured beats go to the bottom */
+function numberFeatured() {
+  DB.filter(x => x.featured)
+    .sort((x, y) => (x.featPos || 99) - (y.featPos || 99) || (x.featuredAt || x.added || 0) - (y.featuredAt || y.added || 0))
+    .forEach((x, i) => { x.featPos = i + 1; });
+}
+/* move a featured beat to spot n; the others slide up or down one to make room */
+function moveFeatured(b, n) {
+  numberFeatured();
+  const list = DB.filter(x => x.featured && x !== b).sort((x, y) => x.featPos - y.featPos);
+  list.splice(Math.max(0, Math.min(n, list.length + 1) - 1), 0, b);
+  list.forEach((x, i) => { x.featPos = i + 1; });
+}
+numberFeatured(); // beats featured before spots existed get numbered oldest-first
 /* admin: send a beat free to someone (same branded email + 30-day download link as a purchase, no charge) */
 app.post("/api/admin/beats/:slug/gift", requireAdmin, async (req, res) => {
   const b = getBeat(req.params.slug);
@@ -588,7 +634,13 @@ app.post("/api/admin/beats", requireAdmin, (req, res) => {
 app.patch("/api/admin/beats/:slug", requireAdmin, (req, res) => {
   const b = DB.find(x => x.slug === req.params.slug);
   if (!b) return res.status(404).json({ error: "beat not found" });
-  try { const was = !!b.featured; Object.assign(b, cleanFields(req.body || {}, true)); const bumped = applyFeatured(b, was); saveDB(); res.json({ ...getBeat(b.slug), bumped }); }
+  try {
+    const was = !!b.featured, oldPos = b.featPos, f = cleanFields(req.body || {}, true), pos = f.featPos; delete f.featPos;
+    Object.assign(b, f); if (oldPos) b.featPos = oldPos;
+    const bumped = applyFeatured(b, was);
+    if (pos && b.featured) moveFeatured(b, pos);
+    saveDB(); res.json({ ...getBeat(b.slug), bumped });
+  }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.delete("/api/admin/beats/:slug", requireAdmin, (req, res) => {
