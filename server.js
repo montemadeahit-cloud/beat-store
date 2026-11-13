@@ -717,6 +717,44 @@ app.get("/api/admin/beats/:slug/video", requireAdmin, (req, res) => {
   if (!b || !fs.existsSync(videoPath(b.slug))) return res.status(404).send("no video yet");
   res.download(videoPath(b.slug), videoName(b));
 });
+/* every finished store-beat video in one .zip (stored, not compressed: mp4s don't shrink anyway).
+   streamed straight from disk, so it starts downloading right away and uses almost no memory */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crcUpdate = (crc, buf) => { crc = ~crc >>> 0; for (let i = 0; i < buf.length; i++) crc = CRC_T[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8); return ~crc >>> 0; };
+app.get("/api/admin/videos/all.zip", requireAdmin, async (req, res) => {
+  const used = new Set();
+  const files = DB.filter(b => videoInfo(b).video.status === "ready").map(b => {
+    let name = videoName(b), i = 2; while (used.has(name.toLowerCase())) name = videoName(b).replace(/\.mp4$/, ` (${i++}).mp4`);
+    used.add(name.toLowerCase()); return { file: videoPath(b.slug), name: Buffer.from(name, "utf8") };
+  });
+  if (!files.length) return res.status(404).send("no finished videos yet");
+  const day = new Date(), dosDate = ((day.getFullYear() - 1980) << 9) | ((day.getMonth() + 1) << 5) | day.getDate(), dosTime = (day.getHours() << 11) | (day.getMinutes() << 5);
+  res.set({ "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="montemadethis videos.zip"`, "Cache-Control": "no-store" });
+  let offset = 0, aborted = false; const central = [];
+  req.on("close", () => { aborted = true; });
+  const write = buf => new Promise(r => { offset += buf.length; res.write(buf) ? r() : res.once("drain", r); });
+  try {
+    for (const f of files) {
+      if (aborted) return;
+      const start = offset, h = Buffer.alloc(30);
+      h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt16LE(0x0808, 6); h.writeUInt16LE(0, 8);
+      h.writeUInt16LE(dosTime, 10); h.writeUInt16LE(dosDate, 12); h.writeUInt16LE(f.name.length, 26);
+      await write(Buffer.concat([h, f.name]));
+      let crc = 0, size = 0;
+      for await (const chunk of fs.createReadStream(f.file)) { if (aborted) return; crc = crcUpdate(crc, chunk); size += chunk.length; await write(chunk); }
+      const d = Buffer.alloc(16); d.writeUInt32LE(0x08074b50, 0); d.writeUInt32LE(crc, 4); d.writeUInt32LE(size, 8); d.writeUInt32LE(size, 12);
+      await write(d);
+      const c = Buffer.alloc(46);
+      c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(0x0808, 8); c.writeUInt16LE(0, 10);
+      c.writeUInt16LE(dosTime, 12); c.writeUInt16LE(dosDate, 14); c.writeUInt32LE(crc, 16); c.writeUInt32LE(size, 20); c.writeUInt32LE(size, 24);
+      c.writeUInt16LE(f.name.length, 28); c.writeUInt32LE(start, 42);
+      central.push(Buffer.concat([c, f.name]));
+    }
+    const cd = Buffer.concat(central), e = Buffer.alloc(22);
+    e.writeUInt32LE(0x06054b50, 0); e.writeUInt16LE(central.length, 8); e.writeUInt16LE(central.length, 10); e.writeUInt32LE(cd.length, 12); e.writeUInt32LE(offset, 16);
+    await write(cd); await write(e); res.end();
+  } catch (err) { console.error("zip failed", err); res.destroy(); }
+});
 
 /* ---------- video storage: see how much space videos use, and clear them out ---------- */
 const dirBytes = d => { let n = 0; try { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); n += e.isDirectory() ? dirBytes(f) : fs.statSync(f).size; } } catch {} return n; };
