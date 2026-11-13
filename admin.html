@@ -50,6 +50,8 @@ button,input{font:inherit;color:inherit}
 .badge.live{color:#7be39b;border-color:#2b5a3a}
 .empty{color:var(--g)}
 [hidden]{display:none!important}
+.fpos{background:#000;color:#fff;border:1px solid var(--hair);border-radius:999px;padding:3px 10px;font:inherit;font-size:14px;margin-left:10px;cursor:pointer;vertical-align:middle}
+.fpos:hover{border-color:#fff}.fpos:disabled{opacity:.5}
 .seg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;padding:3px;flex:none}
 .seg button{background:none;border:0;border-radius:999px;padding:7px 18px;color:var(--g);font-weight:500;cursor:pointer}
 .seg button:hover{color:#fff}.seg button.on{background:#fff;color:#000;font-weight:900}
@@ -158,7 +160,8 @@ $("#sTee").onclick=async e=>{
   btns.forEach(x=>x.disabled=false);
 };
 async function load(){
-  const beats=await api("GET","/api/admin/beats"),box=$("#list");
+  const beats=await api("GET","/api/admin/beats"),box=$("#list"),nFeat=beats.filter(b=>b.featured).length;
+  const posSel=b=>b.featured?`<select class="fpos" data-pos aria-label="featured spot for ${esc(b.name)}" title="order on the homepage, #1 is on top">${Array.from({length:nFeat},(_,i)=>`<option value="${i+1}"${(b.featPos||0)===i+1?" selected":""}>#${i+1}</option>`).join("")}</select>`:"";
   $("#featCount").textContent=`(${beats.filter(b=>b.featured).length}/5 featured · a 6th replaces the oldest)`;
   if(!beats.length){box.innerHTML='<p class="empty">no beats yet. add your first one above.</p>';return}
   box.innerHTML=beats.map(b=>`
@@ -167,7 +170,7 @@ async function load(){
     <div class="stats" hidden>${statsHtml(b.stats||{})}</div>
     <div class="row3"><input class="in" data-k="name" value="${esc(b.name)}" aria-label="name"><input class="in" data-k="genre" value="${esc(b.genre||"")}" placeholder="genre" maxlength="24" aria-label="genre"><input class="in" data-k="bpm" type="number" value="${b.bpm}" aria-label="bpm"><input class="in" data-k="price" type="number" value="${b.price}" aria-label="price"></div>
     <input class="in" data-k="coprod" value="${esc(b.coprod||"")}" placeholder="co-producers (optional, separate with commas)" maxlength="120" aria-label="co-producers" style="margin-bottom:6px">
-    <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>
+    <label class="chk"><input type="checkbox" data-k="featured" ${b.featured?"checked":""}> featured</label>${posSel(b)}
     <div class="file"><span>mp3: ${b.hasFull?'<span class="ok">uploaded</span>':'<span class="miss">missing</span>'}</span><input type="file" data-up="full" accept=".mp3,audio/mpeg"></div>
     <div class="bar"><i></i></div>
     ${b.hasFull?`<div class="gift"><span class="glab">send it free</span><input class="in" type="email" data-gift placeholder="their email" aria-label="email to send ${esc(b.name)} to"><button class="btn ghost" data-act="gift">send</button></div>`:""}
@@ -200,6 +203,12 @@ $("#list").addEventListener("click",async e=>{
       await api("DELETE","/api/admin/beats/"+slug);load();
     }
   }catch(err){st.textContent=err.message;st.style.color="#ff6b6b"}
+});
+$("#list").addEventListener("change",async e=>{ // featured spot: saves right away, the others slide over to make room
+  if(!e.target.matches("[data-pos]"))return;
+  const sel=e.target,card=sel.closest("[data-slug]"),st=card.querySelector(".st");sel.disabled=true;
+  try{await api("PATCH","/api/admin/beats/"+card.dataset.slug,{featPos:+sel.value});st.style.color="#7be39b";st.textContent="moved to #"+sel.value;setTimeout(load,500)}
+  catch(err){st.style.color="#ff6b6b";st.textContent=err.message;sel.disabled=false}
 });
 $("#list").addEventListener("change",async e=>{
   const kind=e.target.dataset.up,card=e.target.closest("[data-slug]");if(!kind||!card)return;
