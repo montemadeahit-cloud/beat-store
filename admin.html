@@ -73,13 +73,6 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
   <div class="warn" id="vol" hidden><b>storage isn't attached yet.</b> anything you upload will disappear the next time the site redeploys. add a Volume in Railway first (see steps), then come back.</div>
 
   <div class="box">
-    <h2>site sections</h2>
-    <div class="hd" style="margin:0"><span>shirts section ("i draw sometimes")</span>
-      <div class="seg" id="sTee" role="radiogroup" aria-label="shirts section"><button data-v="1" role="radio">show</button><button data-v="0" role="radio">hide</button></div></div>
-    <p class="sn" id="sTeeSt">your choice is saved and stays until you change it. visitors never see shirts while the tee shop is off.</p>
-  </div>
-
-  <div class="box">
     <h2>add a beat</h2>
     <div class="row3"><input class="in" id="nName" placeholder="beat name"><input class="in" id="nGenre" placeholder="genre (optional)" maxlength="24"><input class="in" id="nBpm" type="number" placeholder="bpm"><input class="in" id="nPrice" type="number" placeholder="$ price"></div>
     <input class="in" id="nCo" placeholder="co-producers (optional, separate with commas)" maxlength="120" style="margin-bottom:6px">
@@ -90,6 +83,13 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
   </div>
 
   <div id="list"></div>
+
+  <div class="box" id="siteSections" style="margin-top:40px">
+    <h2>site sections</h2>
+    <div class="hd" style="margin:0"><span>shirts section ("i draw sometimes")</span>
+      <div class="seg" id="sTee" role="radiogroup" aria-label="shirts section"><button data-v="1" role="radio">show</button><button data-v="0" role="radio">hide</button></div></div>
+    <p class="sn" id="sTeeSt">your choice is saved and stays until you change it. visitors never see shirts while the tee shop is off.</p>
+  </div>
 </div>
 
 </div>
