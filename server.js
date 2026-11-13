@@ -46,6 +46,13 @@ let statsDirty = false;
 const saveStats = () => { if (!statsDirty) return; statsDirty = false; fs.writeFile(STATS_FILE + ".tmp", JSON.stringify(STATS), e => { if (!e) fs.rename(STATS_FILE + ".tmp", STATS_FILE, () => {}); }); };
 setInterval(saveStats, 10000).unref();
 for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { if (statsDirty) { try { fs.writeFileSync(STATS_FILE, JSON.stringify(STATS)); } catch {} } process.exit(0); });
+/* ---------- admin settings (stored next to beats.json) ----------
+   teePreview: while logged in, show the shirts section ("i draw sometimes too") + tee photos even though the tee shop is off.
+   false = hidden for you too. nothing is deleted, flip it back on any time from /admin. */
+const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
+let SETTINGS = { teePreview: false };
+try { SETTINGS = { ...SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) }; } catch {}
+const saveSettings = () => { fs.writeFileSync(SETTINGS_FILE + ".tmp", JSON.stringify(SETTINGS, null, 2)); fs.renameSync(SETTINGS_FILE + ".tmp", SETTINGS_FILE); };
 const statOf = slug => STATS[slug] || (STATS[slug] = { plays: 0, adds: 0, secs: 0, since: Date.now() });
 const fullPath = slug => path.join(FULL_DIR, slug + ".mp3");
 const decorate = b => ({ ...b, hasFull: fs.existsSync(fullPath(b.slug)) });
@@ -177,7 +184,7 @@ function render(beat, req, tee) {
     .replace("__TITLE__", () => esc(title))
     .replace("__OG__", () => og)
     .replace("__CATALOG__", () => JSON.stringify(liveBeats().map(publicBeat)).replace(/</g, "\\u003c"))
-    .replace("__SHOP__", () => JSON.stringify(publicShop(!!req && isAdmin(req))).replace(/</g, "\\u003c"));
+    .replace("__SHOP__", () => JSON.stringify(publicShop(!!req && isAdmin(req) && !!SETTINGS.teePreview)).replace(/</g, "\\u003c"));
 }
 
 /* ---------- signed download links (valid 30 days) ---------- */
@@ -461,6 +468,12 @@ app.get("/admin", (_req, res) => {
 });
 app.get("/admin-video.js", (_req, res) => res.set({ "Cache-Control": "no-cache", "Content-Type": "text/javascript; charset=utf-8" }).sendFile(path.join(ROOT, "admin-video.js")));
 app.get("/api/admin/me", (req, res) => res.json({ authed: isAdmin(req), configured: !!ADMIN_PASSWORD, persistent: PERSISTENT }));
+app.get("/api/admin/settings", requireAdmin, (_req, res) => res.set("Cache-Control", "no-store").json(SETTINGS));
+app.patch("/api/admin/settings", requireAdmin, (req, res) => {
+  if (req.body?.teePreview !== undefined) SETTINGS.teePreview = !!req.body.teePreview;
+  saveSettings();
+  res.json(SETTINGS);
+});
 app.post("/api/admin/login", (req, res) => {
   if (!ADMIN_PASSWORD) return res.status(500).json({ error: "ADMIN_PASSWORD isn't set in Railway yet" });
   const t = tries.get(req.ip) || { n: 0, reset: Date.now() + 15 * 60 * 1000 };
@@ -873,7 +886,7 @@ app.get("/img/:file", (req, res) => {
 app.get("/email-logo.png", (_req, res) => HAS_LOGO ? res.sendFile(LOGO_FILE, { headers: { "Cache-Control": "public, max-age=86400", "Content-Type": "image/png" } }) : res.sendStatus(404));
 app.get("/tee/:id", (req, res) => { // shirt pages (visible when tees are on, or to you while logged in)
   const t = teesConfig().tees.find(x => String(x.id) === req.params.id);
-  t && (teesOn() || isAdmin(req)) ? res.set("Cache-Control", "no-cache").type("html").send(render(null, req, t)) : res.redirect("/");
+  t && (teesOn() || (isAdmin(req) && SETTINGS.teePreview)) ? res.set("Cache-Control", "no-cache").type("html").send(render(null, req, t)) : res.redirect("/");
 });
 app.get("/health", (_req, res) => res.send("ok"));
 
