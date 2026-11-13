@@ -50,6 +50,10 @@ button,input{font:inherit;color:inherit}
 .badge.live{color:#7be39b;border-color:#2b5a3a}
 .empty{color:var(--g)}
 [hidden]{display:none!important}
+.seg{display:inline-flex;border:1px solid var(--hair);border-radius:999px;padding:3px;flex:none}
+.seg button{background:none;border:0;border-radius:999px;padding:7px 18px;color:var(--g);font-weight:500;cursor:pointer}
+.seg button:hover{color:#fff}.seg button.on{background:#fff;color:#000;font-weight:900}
+.seg button:disabled{cursor:default}
 input[type=file]{color:var(--g);font-size:14px;max-width:100%}
 </style>
 </head>
@@ -67,6 +71,13 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
 <div id="app" hidden>
   <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="logout">log out</button></div></div>
   <div class="warn" id="vol" hidden><b>storage isn't attached yet.</b> anything you upload will disappear the next time the site redeploys. add a Volume in Railway first (see steps), then come back.</div>
+
+  <div class="box">
+    <h2>site sections</h2>
+    <div class="hd" style="margin:0"><span>shirts section ("i draw sometimes")</span>
+      <div class="seg" id="sTee" role="radiogroup" aria-label="shirts section"><button data-v="1" role="radio">show</button><button data-v="0" role="radio">hide</button></div></div>
+    <p class="sn" id="sTeeSt">your choice is saved and stays until you change it. visitors never see shirts while the tee shop is off.</p>
+  </div>
 
   <div class="box">
     <h2>add a beat</h2>
@@ -130,8 +141,22 @@ async function boot(){
   if(!me.configured)return showLogin("ADMIN_PASSWORD isn't set in Railway yet.");
   if(!me.authed)return showLogin();
   $("#login").hidden=true;$("#app").hidden=false;$("#vol").hidden=me.persistent;
+  loadSettings();
   load();
 }
+function showTeeSeg(on){document.querySelectorAll("#sTee button").forEach(b=>{const me=(b.dataset.v==="1")===on;b.classList.toggle("on",me);b.setAttribute("aria-checked",me)})}
+async function loadSettings(){
+  try{const s=await api("GET","/api/admin/settings");showTeeSeg(!!s.teePreview)}catch(e){console.error("settings",e)}
+}
+$("#sTee").onclick=async e=>{
+  const b=e.target.closest("button");if(!b||b.classList.contains("on"))return;
+  const want=b.dataset.v==="1",st=$("#sTeeSt"),btns=document.querySelectorAll("#sTee button");
+  btns.forEach(x=>x.disabled=true);
+  try{const s=await api("PATCH","/api/admin/settings",{teePreview:want});showTeeSeg(!!s.teePreview);st.style.color="#7be39b";
+    st.textContent=s.teePreview?"showing. refresh the site to see it.":"hidden on the site for you too. nothing deleted."}
+  catch(err){st.style.color="#ff6b6b";st.textContent=err.message}
+  btns.forEach(x=>x.disabled=false);
+};
 async function load(){
   const beats=await api("GET","/api/admin/beats"),box=$("#list");
   $("#featCount").textContent=`(${beats.filter(b=>b.featured).length}/5 featured · a 6th replaces the oldest)`;
