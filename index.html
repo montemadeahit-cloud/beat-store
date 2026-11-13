@@ -646,7 +646,7 @@ function mk(b){
   el.querySelector(".more").onclick=e=>{e.stopPropagation();openMenu(e.currentTarget,b)};
   els.push([el,b]);return el;
 }
-const FEAT=BEATS.filter(b=>b.featured).slice(0,5),REST=[...BEATS];
+const FEAT=BEATS.filter(b=>b.featured).sort((a,b)=>(a.featPos||99)-(b.featPos||99)).slice(0,5),REST=[...BEATS]; // featured: in the order you set in admin (#1 on top)
 for(let i=REST.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[REST[i],REST[j]]=[REST[j],REST[i]]} // all beats: every beat, new random order each visit
 FEAT.forEach(b=>$("feat").appendChild(mk(b)));
 REST.forEach(b=>$("list").appendChild(mk(b)));
