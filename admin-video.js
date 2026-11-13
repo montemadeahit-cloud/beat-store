@@ -220,6 +220,7 @@
 
   /* quick video: any audio + any photo, nothing added to the store */
   const QAPI = "/api/admin/quick";
+  const SHOW_RECENT_QUICK = false; // flip to true to bring back the "recent quick videos" list (they still auto-delete after 7 days either way)
   function quickPanel() {
     const box = el("div", "mv-quick");
     box.append(el("p", "mv-sub", "make a video from any audio file. nothing gets added to the store. 1920×1080, black background, photo cropped to a 1000px square."));
@@ -301,6 +302,7 @@
     };
 
     function loadRecent() {
+      if (!SHOW_RECENT_QUICK) { recentH.style.display = "none"; recent.innerHTML = ""; return; }
       getJSON(QAPI).then(list => {
         recent.innerHTML = ""; recentH.style.display = list.length ? "" : "none";
         for (const q of list) {
