@@ -61,8 +61,12 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
 .forder{border:1px solid var(--hair);border-radius:12px;padding:4px 14px;margin:8px 0 4px}
 .forder .fr{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--hair)}.forder .fr:first-child{border-top:0}
 .forder .fn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.forder .fp{color:var(--g);width:28px}
-.forder .mv{width:32px;height:32px;border-radius:50%;border:1px solid var(--hair);background:none;color:#fff;cursor:pointer;padding:0;font-size:13px}
-.forder .mv:hover{background:#fff;color:#000}.forder .mv:disabled{opacity:.25;cursor:default;background:none;color:#fff}
+.forder .fr{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;border-radius:8px;transition:background .15s}
+.forder .fr:hover{background:#0e0e0e}
+.forder .grip{color:var(--g);font-size:18px;letter-spacing:-3px;line-height:1;padding:0 4px}
+.forder .fr.lift{background:#161616;cursor:grabbing;box-shadow:0 10px 30px rgba(0,0,0,.7);position:relative;z-index:2}
+.forder.busy{opacity:.5;pointer-events:none}
+.forder .fhint{color:var(--g);font-size:13px;margin:8px 0 4px}
 /* reels: the video editor gets the whole screen, separate from the beats section */
 .yt{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column}
 .yt-bar{display:flex;align-items:center;gap:16px;height:52px;padding:0 20px;border-bottom:1px solid var(--hair);flex:none}
@@ -242,16 +246,27 @@ async function load(){
 let FEATURED=[];
 function renderOrder(){
   const box=$("#fOrder");
-  box.innerHTML=FEATURED.length?FEATURED.map((b,i)=>`<div class="fr" data-slug="${esc(b.slug)}"><span class="fp">#${i+1}</span><span class="fn">${esc(b.name)}</span><button class="mv" data-to="${i}" aria-label="move ${esc(b.name)} up"${i?"":" disabled"}>▲</button><button class="mv" data-to="${i+2}" aria-label="move ${esc(b.name)} down"${i<FEATURED.length-1?"":" disabled"}>▼</button></div>`).join("")
+  box.innerHTML=FEATURED.length?'<p class="fhint">drag to reorder. #1 is at the top of the homepage.</p>'+FEATURED.map((b,i)=>`<div class="fr" data-slug="${esc(b.slug)}"><span class="grip" aria-hidden="true">⋮⋮</span><span class="fp">#${i+1}</span><span class="fn">${esc(b.name)}</span></div>`).join("")
     :'<p class="empty" style="margin:10px 0">no featured beats yet. tick "featured" on a beat to add it.</p>';
 }
 $("#fOrderBtn").onclick=()=>{const box=$("#fOrder");box.hidden=!box.hidden;$("#fOrderBtn").setAttribute("aria-expanded",!box.hidden);renderOrder()};
-$("#fOrder").onclick=async e=>{
-  const b=e.target.closest("[data-to]");if(!b||b.disabled)return;
-  $("#fOrder").querySelectorAll("button").forEach(x=>x.disabled=true);
-  try{await api("PATCH","/api/admin/beats/"+b.closest("[data-slug]").dataset.slug,{featPos:+b.dataset.to});await load()}
-  catch(err){alert(err.message);renderOrder()}
-};
+/* drag a row up or down; it saves when you let go */
+$("#fOrder").addEventListener("pointerdown",e=>{
+  const row=e.target.closest(".fr"),box=$("#fOrder");if(!row||e.button>0)return;
+  e.preventDefault();row.classList.add("lift");document.body.style.cursor="grabbing";
+  const from=[...box.querySelectorAll(".fr")].indexOf(row);
+  const move=ev=>{const rows=[...box.querySelectorAll(".fr")].filter(x=>x!==row);let before=null;
+    for(const r of rows){const b=r.getBoundingClientRect();if(ev.clientY<b.top+b.height/2){before=r;break}}
+    if(before){if(row.nextElementSibling!==before)box.insertBefore(row,before)}else if(rows.length&&rows[rows.length-1].nextElementSibling!==row)rows[rows.length-1].after(row);
+    box.querySelectorAll(".fr .fp").forEach((p,i)=>p.textContent="#"+(i+1))};
+  const up=async()=>{removeEventListener("pointermove",move);removeEventListener("pointerup",up);removeEventListener("pointercancel",up);row.classList.remove("lift");document.body.style.cursor="";
+    const to=[...box.querySelectorAll(".fr")].indexOf(row);if(to===from)return;
+    box.classList.add("busy");
+    try{await api("PATCH","/api/admin/beats/"+row.dataset.slug,{featPos:to+1});await load()}
+    catch(err){alert(err.message);renderOrder()}
+    box.classList.remove("busy")};
+  addEventListener("pointermove",move);addEventListener("pointerup",up);addEventListener("pointercancel",up); // on the page, so the drag keeps going while the row moves
+});
 $("#list").addEventListener("click",e=>{ // ⓘ toggles that beat's stats
   const b=e.target.closest("[data-info]");if(!b)return;const box=b.closest("[data-slug]").querySelector(".stats");
   box.hidden=!box.hidden;b.setAttribute("aria-expanded",!box.hidden);
