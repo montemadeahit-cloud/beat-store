@@ -75,6 +75,12 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
 .yt-bar h1{font-size:22px;margin-right:auto}
 .yt iframe{flex:1;width:100%;border:0;display:block;background:#101012}
 body.yt-on{overflow:hidden}
+/* phones: the top bars stay on one tidy line */
+@media(max-width:520px){
+  .w{padding:18px 16px 60px}
+  .top{flex-wrap:nowrap;gap:10px}.top h1{font-size:25px;white-space:nowrap}.top div{gap:14px;font-size:15px;white-space:nowrap}
+  .yt-bar{height:48px;padding:0 14px;gap:14px;font-size:15px}.yt-bar h1{font-size:19px}
+}
 </style>
 </head>
 <body><div class="w">
@@ -204,7 +210,7 @@ async function boot(){
 /* reels: opens the editor in its own section. it stays loaded when you go back to your beats, so nothing you're working on is lost */
 function showYt(on,quiet){
   const yt=$("#yt");
-  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src=location.pathname.replace(/\/+$/,"")+"/reels";f.title="reels editor";f.allow="clipboard-read; clipboard-write";yt.appendChild(f)}
+  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src=location.pathname.replace(/\/+$/,"")+"/reels";f.title="reels editor";f.allow="clipboard-read; clipboard-write; web-share";yt.appendChild(f)}
   yt.hidden=!on;document.body.classList.toggle("yt-on",on);
   if(!quiet)history.replaceState(null,"",on?"#reels":location.pathname);
   if(on)setTimeout(()=>yt.querySelector("iframe")?.focus(),50);
