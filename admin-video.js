@@ -358,25 +358,19 @@
     return xo.apply(this, arguments);
   };
 
-  /* the "videos" button, only while logged in: next to "view site" in your admin header if it's there, otherwise bottom right */
+  /* the "yt vids" button, only while logged in: in your admin header right before "reels", otherwise bottom right */
   let btn = null, top = null;
-  const findViewSite = () => [...document.querySelectorAll("a,button")].find(e => !e.closest(".mv-bd") && e !== top && /^view site\b/i.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 24 && e.offsetParent !== null);
+  const findAnchor = () => { const r = document.getElementById("ytBtn"); return r && r.offsetParent !== null ? r : null; };
   function placeButtons(authed) {
     if (!authed) { btn?.remove(); top?.remove(); btn = top = null; return; }
-    const vs = findViewSite();
-    if (vs) {
-      if (!top || !top.isConnected || top.previousElementSibling !== vs) {
+    const anchor = findAnchor();
+    if (anchor) {
+      if (!top || !top.isConnected || top.nextElementSibling !== anchor) {
         top?.remove();
-        top = document.createElement(vs.tagName === "A" ? "a" : "button");
-        top.className = vs.className; top.textContent = "yt vids"; top.dataset.mvTop = "1";
-        top.style.cssText = vs.style.cssText; // look exactly like "view site"
-        const cs = getComputedStyle(vs);
-        for (const k of ["color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform", "textDecoration", "lineHeight", "background", "border", "padding", "cursor"]) top.style[k] = cs[k];
-        if (top.tagName === "A") top.href = "#yt-vids"; else top.type = "button";
+        top = document.createElement("button"); top.type = "button";
+        top.className = anchor.className; top.textContent = "yt vids"; top.dataset.mvTop = "1"; // looks exactly like "reels"
         top.onclick = e => { e.preventDefault(); openList(); };
-        const ps = getComputedStyle(vs.parentElement);
-        if (!/flex|grid/.test(ps.display) || ps.columnGap === "normal" || ps.columnGap === "0px") top.style.marginLeft = "18px";
-        vs.after(top);
+        anchor.before(top);
       }
       btn?.remove(); btn = null;
     } else if (!btn || !btn.isConnected) {
@@ -389,7 +383,7 @@
     try { authed = !!(await getJSON("/api/admin/me")).authed; } catch {}
     placeButtons(authed);
   }
-  new MutationObserver(() => { if (authed && ((top && !top.isConnected) || (!top && findViewSite()))) placeButtons(true); }).observe(document.documentElement, { childList: true, subtree: true });
+  new MutationObserver(() => { if (authed && ((top && !top.isConnected) || (!top && findAnchor()))) placeButtons(true); }).observe(document.documentElement, { childList: true, subtree: true });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", checkAuth); else checkAuth();
   setInterval(checkAuth, 5000);
 })();
