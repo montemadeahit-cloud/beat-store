@@ -559,6 +559,10 @@ function cleanFields(body, partial) {
     if (!Array.isArray(body.peaks) || ![48, 120].includes(body.peaks.length) || !body.peaks.every(v => typeof v === "number" && v >= 0 && v <= 1)) throw new Error("bad waveform data");
     out.peaks = body.peaks.map(v => Math.round(v * 100) / 100);
   }
+  if (body.fp !== undefined) { // audio fingerprint for the duplicate check: bass + full-mix loudness every 0.1 s (admin only, never public)
+    if (!Array.isArray(body.fp) || body.fp.length < 16 || body.fp.length > 12000 || body.fp.length % 2 || !body.fp.every(v => Number.isInteger(v) && v >= -200 && v <= 0)) throw new Error("bad fingerprint data");
+    out.fp = body.fp;
+  }
   return out;
 }
 
@@ -868,7 +872,7 @@ app.put("/api/admin/beats/:slug/:kind", requireAdmin, (req, res) => {
     const isMp3 = head.length >= 3 && (head.subarray(0, 3).toString() === "ID3" || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0));
     if (!isMp3) return fail(400, "that doesn't look like an mp3 file");
     fs.renameSync(tmp, dest);
-    const entry = DB.find(x => x.slug === slug); if (entry) { delete entry.peaks; saveDB(); } // new audio = old waveform is stale
+    const entry = DB.find(x => x.slug === slug); if (entry) { delete entry.peaks; delete entry.fp; saveDB(); } // new audio = old waveform + fingerprint are stale
     queueRender(slug); // a cover is already there: make (or remake) the video with the new audio
     res.json({ ok: true, beat: getBeat(slug) });
   });
