@@ -532,7 +532,8 @@ function buildPlan(){
   const gap=P.startsWith("kicks")?bd*0.45:(st>0?0.12:0.05), T=[];
   const fixed=t=>holds.some(([a,b])=>Math.abs(t-a)<1e-3||Math.abs(t-b)<1e-3);
   for(const t of ts){ if(!T.length){T.push(t);continue;} if(t-T[T.length-1]>=gap) T.push(t); else if(fixed(t)&&T.length>1) T[T.length-1]=t; }
-  const n=S.clips.length, rng=mulberry32(S.seed), cur=new Array(n).fill(0), uses=new Array(n).fill(0), segs=[];
+  const n=S.clips.length, rng=mulberry32(S.seed), cur=new Array(n).fill(0), segs=[];
+  const epos=S.clips.map(()=>[-9,-9]), elast=S.clips.map(()=>[-1,-1]); // each clip has 2 players: where each will be paused, and when it was last used
   let prev=-1, deck=[], other=0; const barPick={};
   const ends=[]; for(let lo=0,hi=n-1;lo<=hi;lo++,hi--){ends.push(lo); if(hi!==lo) ends.push(hi);}
   if(n) for(let i=0;i<T.length;i++){
@@ -556,9 +557,14 @@ function buildPlan(){
       c=deck.shift();}
     const cl=S.clips[c], cd=cl.out-cl.in; let s;
     const sp=cl.speed||1, sd=d*sp; // footage used by this shot: 2× eats twice as much, ½× half
-    if(S.order!=="rand"&&S.order!=="chaos"){s=cur[c]; if(s+sd>cd-0.05) s=0; cur[c]=s+sd;} else s=rng()*Math.max(0,cd-sd-0.05);
+    if(S.order!=="chaos"){s=cur[c]; if(s+sd>cd-0.05) s=0; cur[c]=s+sd;} else s=rng()*Math.max(0,cd-sd-0.05);
     const bp=t/bd/4; const down=Math.abs(bp-Math.round(bp))<1e-3;
-    segs.push({t,end,d,clip:c,src:cl.in+s,slot:uses[c]++%2,down}); prev=c;
+    // pick the player: one already paused right where this shot starts needs no jump, so the cut is instant
+    const want=cl.in+s, last=segs[segs.length-1], busy=e=>last&&last.clip===c&&last.slot===e;
+    let slot=[0,1].find(e=>Math.abs(epos[c][e]-want)<0.02);
+    if(slot===undefined) slot=[0,1].filter(e=>!busy(e)).sort((a,b)=>elast[c][a]-elast[c][b])[0];
+    epos[c][slot]=want+sd; elast[c][slot]=i;
+    segs.push({t,end,d,clip:c,src:want,slot,down}); prev=c;
   }
   const kicks=(S.an?S.an.kicks:[]).map(k=>k-rs).filter(k=>k>=-0.01&&k<dur);
   return {segs,dur,rs,bd,kicks};
@@ -577,10 +583,11 @@ function bassAt(t){ // sub-bass energy at time t in the section, gated so soft l
   if(i<0||i+1>=an.sub.length) return 0; const x=an.sub[i]+(an.sub[i+1]-an.sub[i])*(f-i);
   return Math.pow(Math.max(0,(x-0.32)/0.68),1.4);}
 function drawCover(ctx,v,W,H){const vw=v.videoWidth,vh=v.videoHeight; if(!vw||v.readyState<2) return false; const r=Math.max(W/vw,H/vh), dw=vw*r, dh=vh*r; ctx.drawImage(v,(W-dw)/2,(H-dh)/2,dw,dh); return true;}
+let vigC=null; // the bass-shake vignette, built once per size
 function drawFrame(t){
   const W=out.width,H=out.height,ctx=octx;
   if(!plan||!plan.segs.length){ctx.fillStyle="#0b0b0c";ctx.fillRect(0,0,W,H);ctx.fillStyle="#5c5c64";ctx.font=`600 ${Math.round(W*0.045)}px ${tok("--body")}`;ctx.textAlign="center";ctx.fillText("",W/2,H/2);ctx.textAlign="left";return;}
-  sizeBuffers(); for(const c of [octx,bctx,cctx]){c.imageSmoothingEnabled=true; c.imageSmoothingQuality="high";}
+  sizeBuffers(); const q=rendering?"high":"medium"; for(const c of [octx,bctx,cctx]){c.imageSmoothingEnabled=true; c.imageSmoothingQuality=q;}
   const k=segAt(Math.max(0,t)), s=plan.segs[k], clip=S.clips[s.clip], age=Math.max(0,t-s.t);
   const amt=S.fx.shake/100, b=bassAt(t)*amt;
   let sc=1+(amt>0?0.1*amt:0);  // headroom so a shaking frame never shows its edges
@@ -598,7 +605,7 @@ function drawFrame(t){
   const rot=vnoise(t*19,3)*0.012*b;
   cctx.save(); cctx.translate(W/2+dx,H/2+dy); cctx.rotate(rot); cctx.translate(-W/2,-H/2);
   if(S.fx.jello&&b>0.04){
-    const strips=40, sh=H/strips, ph=t*52, A=m*0.014*b;
+    const strips=rendering?40:24, sh=H/strips, ph=t*52, A=m*0.014*b;
     for(let i=0;i<strips;i++){const y=i*sh, off=Math.sin(i/strips*Math.PI*3.2+ph)*A+vnoise(t*40+i*0.15,6)*A*0.4;
       cctx.drawImage(bufC,0,y,W,sh+1,off,y,W,sh+1);}
   } else cctx.drawImage(bufC,0,0);
@@ -606,8 +613,8 @@ function drawFrame(t){
   if(S.mirror){ctx.save(); ctx.translate(W,0); ctx.scale(-1,1); ctx.drawImage(compC,0,0); ctx.restore();} else ctx.drawImage(compC,0,0);
   if(b>0.05){
     ctx.fillStyle=`rgba(255,240,220,${Math.min(0.07,b*0.06)})`; ctx.fillRect(0,0,W,H);
-    const vg=ctx.createRadialGradient(W/2,H/2,m*0.35,W/2,H/2,Math.max(W,H)*0.75); vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,`rgba(0,0,0,${Math.min(0.45,b*0.35)})`); ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);}
-  drawOverlay(ctx,W,H);
+    if(!vigC||vigC.w!==W||vigC.h!==H){const vg=ctx.createRadialGradient(W/2,H/2,m*0.35,W/2,H/2,Math.max(W,H)*0.75); vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,1)"); vigC={w:W,h:H,g:vg};}
+    ctx.globalAlpha=Math.min(0.45,b*0.35); ctx.fillStyle=vigC.g; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;}
 }
 let textBox=null;
 function fontStr(fs,key){const f=FONTS[key||S.text.font]; return `${f[0]} ${Math.round(fs)}px ${f[1]}`;}
@@ -917,10 +924,17 @@ addEventListener("drop",e=>{e.preventDefault(); dragDepth=0; document.body.class
   if(au) loadAudio(au); const vs=fs.filter(f=>f!==au); if(vs.length) addVideos(vs);});
 addEventListener("keydown",e=>{if(!$("#trimModal").hidden) return; if(e.code==="Space"&&!/INPUT|TEXTAREA|SELECT|BUTTON/.test(document.activeElement?.tagName||"")){e.preventDefault(); if(!(playing&&playing.record)&&!rendering) togglePreview();}});
 
-function setAspect(){const [w,h]=ASPECT[S.aspect], k=S.res/1080; out.width=Math.round(w*k/2)*2; out.height=Math.round(h*k/2)*2; updQual();}
-const vbr=()=>Math.round(Math.min(80e6,Math.max(12e6,out.width*out.height*S.fps*0.15)));
+/* the preview is drawn at the size it shows on screen (lighter = smoother); export always renders the full 1080x1920 */
+let previewK=0.5;
+const exportDims=()=>{const [w,h]=ASPECT[S.aspect], k=S.res/1080; return [Math.round(w*k/2)*2,Math.round(h*k/2)*2];};
+function canvasRes(full){const [w,h]=ASPECT[S.aspect], k=full?S.res/1080:previewK, W=Math.round(w*k/2)*2, H=Math.round(h*k/2)*2; if(out.width!==W||out.height!==H){out.width=W; out.height=H;}}
+function setAspect(){if(!rendering) canvasRes(false); updQual();}
+function updPreviewK(){const r=$(".screen").getBoundingClientRect(), need=r.height*Math.min(2,devicePixelRatio||1)/1920, k=Math.min(0.6,Math.max(0.35,Math.round(need*20)/20));
+  if(k!==previewK){previewK=k; if(!rendering){canvasRes(false); if(!playing) renderStill();}}}
+new ResizeObserver(()=>{clearTimeout(updPreviewK.t); updPreviewK.t=setTimeout(updPreviewK,150);}).observe($(".screen"));
+const vbr=()=>{const [W,H]=exportDims(); return Math.round(Math.min(80e6,Math.max(12e6,W*H*S.fps*0.15)));};
 function updQual(){const el=$("#qualHint"); if(!el) return;
-  el.textContent=`Frame by frame, ${out.width}×${out.height} at ${S.fps} fps, about ${Math.round(vbr()/1e6)} Mbps. Every frame lands; takes roughly 2 to 5 times the reel's length. Keep this tab open while it works.`;
+  el.textContent=`Frame by frame, ${exportDims().join("×")} at ${S.fps} fps, about ${Math.round(vbr()/1e6)} Mbps. Every frame lands; takes roughly 2 to 5 times the reel's length. Keep this tab open while it works.`;
   $("#fpsSeg").title=el.textContent;}
 
 /* ---------- timeline ---------- */
@@ -933,9 +947,16 @@ function buildOvBase(){
   for(let px=0;px<W;px++){const b=Math.floor(px/W*B); const lo=an.peaks[b*2]/mx, hi=an.peaks[b*2+1]/mx; x.fillRect(px,H/2-hi*H*0.42,1,Math.max(1,(hi-lo)*H*0.42));}
   return c;
 }
+let ovStill=null;
 function drawOverview(t){
-  if(!S.an||!ov.width||!ov.height) return; const x=ov.getContext("2d"), W=ov.width, H=ov.height, D=S.an.duration, d=devicePixelRatio||1;
+  if(!S.an||!ov.width||!ov.height) return; const W=ov.width, H=ov.height, D=S.an.duration, d=devicePixelRatio||1, rs=regionStart();
   if(!ovBase) ovBase=buildOvBase();
+  const key=[W,H,D,rs,regionDur(),S.bpm].join("|");
+  if(!ovStill||ovStill.key!==key||ovStill.base!==ovBase){const c=ovStill?.c||document.createElement("canvas"); c.width=W; c.height=H; ovStill={key,c,base:ovBase}; drawOverviewStill(c.getContext("2d"),W,H,D,d);}
+  const x=ov.getContext("2d"); x.clearRect(0,0,W,H); x.drawImage(ovStill.c,0,0);
+  if(t!=null){x.fillStyle="#fff"; x.fillRect((rs+t)/D*W,0,1.5*d,H);}
+}
+function drawOverviewStill(x,W,H,D,d){
   x.clearRect(0,0,W,H); x.globalAlpha=0.55; x.drawImage(ovBase,0,0); x.globalAlpha=1;
   const bdur=barDur(), pxBar=bdur/D*W, every=pxBar<5?(pxBar<1.5?16:4):1;
   x.fillStyle="rgba(255,255,255,0.08)";
@@ -944,7 +965,6 @@ function drawOverview(t){
   x.save(); x.beginPath(); x.rect(x0,0,x1-x0,H); x.clip(); x.drawImage(ovBase,0,0); x.restore();
   x.fillStyle="rgba(255,255,255,0.07)"; x.fillRect(x0,0,x1-x0,H);
   x.fillStyle="#ffffff"; x.fillRect(x0,0,2*d,H); x.fillRect(x1-2*d,0,2*d,H);
-  if(t!=null){x.fillStyle="#fff"; x.fillRect((rs+t)/D*W,0,1.5*d,H);}
 }
 function buildLaneBase(){
   const an=S.an, c=document.createElement("canvas"); c.width=lane.width; c.height=lane.height; const x=c.getContext("2d"), d=devicePixelRatio||1;
@@ -955,8 +975,18 @@ function buildLaneBase(){
   x.fillStyle=tok("--wave"); cols.forEach(([lo,hi],px)=>x.fillRect(px,mid-hi/mx*amp*0.95,1,Math.max(1,(hi-lo)/mx*amp*0.95)));
   return c;
 }
+let laneStill=null;
 function drawLane(t){
-  if(!S.an||!plan||!lane.width||!lane.height) return; const x=lane.getContext("2d"), W=lane.width, H=lane.height, d=devicePixelRatio||1;
+  if(!S.an||!plan||!lane.width||!lane.height) return; const W=lane.width, H=lane.height, d=devicePixelRatio||1;
+  // the still layer is redrawn only when something changes (not playing, a new plan, a resize); while playing it's just copied
+  if(t==null||laneDrag||!laneStill||laneStill.plan!==plan||laneStill.w!==W||laneStill.h!==H||laneStill.shake!==S.fx.shake){
+    const c=laneStill?.c||document.createElement("canvas"); c.width=W; c.height=H; laneStill={c,plan,w:W,h:H,shake:S.fx.shake}; drawLaneStill(c.getContext("2d"),W,H,d);}
+  const x=lane.getContext("2d"); x.clearRect(0,0,W,H); x.drawImage(laneStill.c,0,0);
+  if(t!=null){const D=plan.dur, X=s=>s/D*W, bot=H-22*d, sy=bot+6*d, sh=H-sy-2*d, s=plan.segs[segAt(Math.max(0,t))];
+    if(playing&&s){const a=X(s.t), b=X(s.end); x.fillStyle=clipColor(s.clip); rr(x,a+d,sy,Math.max(1,b-a-2*d),sh,3*d); x.fill(); if(b-a>14*d){x.fillStyle="#111"; x.font=`500 ${9*d}px ${tok("--mono")}`; x.textBaseline="middle"; x.fillText(letter(s.clip),a+5*d,sy+sh/2+0.5);}}
+    x.fillStyle="#fff"; x.fillRect(X(t),0,1.5*d,H);}
+}
+function drawLaneStill(x,W,H,d){const t=null;
   const key=[W,H,S.an.duration,regionStart(),regionDur()].join("|"); if(key!==laneKey){laneBase=buildLaneBase(); laneKey=key;}
   x.clearRect(0,0,W,H); x.globalAlpha=0.7; x.drawImage(laneBase,0,0); x.globalAlpha=1;
   const D=plan.dur, top=14*d, bot=H-22*d, X=s=>s/D*W;
@@ -979,7 +1009,6 @@ function drawLane(t){
     if(b-a>34*d){x.fillStyle="#ffffff"; x.fillText("HOLD",a+5*d,top+9*d);} });
   plan.segs.forEach((s,i)=>{const a=X(s.t), b=X(s.end); x.fillStyle=clipColor(s.clip); x.globalAlpha=playing&&t!=null&&t>=s.t&&t<s.end?1:0.78; rr(x,a+d,sy,Math.max(1,b-a-2*d),sh,3*d); x.fill(); x.globalAlpha=1;
     if(b-a>14*d){x.fillStyle="#111"; x.fillText(letter(s.clip),a+5*d,sy+sh/2+0.5);} });
-  if(t!=null){x.fillStyle="#fff"; x.fillRect(X(t),0,1.5*d,H);}
 }
 let laneDrag=null;
 function laneBeat(e,round){const r=lane.getBoundingClientRect(); const bt=(e.clientX-r.left)/r.width*nBeats(); return Math.max(0,Math.min(nBeats(),round?Math.round(bt):bt));}
@@ -1027,6 +1056,19 @@ async function prepSeg(k){
   const s=plan&&plan.segs[k]; if(!s) return; const c=S.clips[s.clip]; if(c.kind!=="video") return;
   const v=c.els[s.slot]; v.pause(); if(Math.abs(v.currentTime-s.src)>0.02){v.currentTime=s.src; await once(v,"seeked",2000);}
 }
+/* smooth cuts: line up the next shots while the current one plays (the jump happens well before the cut),
+   then start each one rolling PRE seconds early so it's already moving when the cut lands */
+const PRE=0.2;
+const elOf=s=>{if(!s) return null; const c=S.clips[s.clip]; return c&&c.kind==="video"?c.els[s.slot]:null;};
+const sameEl=(a,b)=>!!a&&!!b&&a.clip===b.clip&&a.slot===b.slot;
+function prepNext(k){
+  const s=plan&&plan.segs[k]; const v=elOf(s); if(!v||!playing) return;
+  for(let j=Math.max(0,k-2);j<k;j++) if(sameEl(plan.segs[j],s)&&j>=playing.cur) return; // that element is still busy with an earlier shot
+  if(playing.cur>=0&&sameEl(plan.segs[playing.cur],s)) return; // it's playing the current shot and just carries on
+  const c=S.clips[s.clip], sp=c.speed||1; v.playbackRate=sp;
+  if(Math.abs(v.currentTime-s.src)<0.08){if(!v.paused) v.pause(); return;} // already paused right where this shot starts
+  const at=Math.max(c.in,s.src-PRE*sp); if(!v.paused) v.pause(); if(Math.abs(v.currentTime-at)>0.02) v.currentTime=at;
+}
 let stillTok=0;
 async function renderStill(){
   if(playing) return; const my=++stillTok;
@@ -1048,7 +1090,7 @@ async function start(record,live){
   stopPlay(); hideResult(record);
   const ctx=getAC(); plan=buildPlan(); stillTok++;
   status(record?"Getting clips ready…":"");
-  await prepSeg(0); prepSeg(1);
+  await prepSeg(0);
   try{await document.fonts.ready;}catch(e){}
   const src=ctx.createBufferSource(); src.buffer=S.audio.buffer;
   analyser=ctx.createAnalyser(); analyser.fftSize=256; abuf=new Uint8Array(analyser.frequencyBinCount);
@@ -1066,7 +1108,7 @@ async function start(record,live){
     $("#exportBtn").textContent="■ Stop recording"; $("#playBtn").disabled=true;
   } else { $("#playBtn").textContent="■ Stop"; }
   P.t0=ctx.currentTime+0.12; src.start(P.t0,regionStart(),plan.dur+0.05);
-  playing=P; P.raf=requestAnimationFrame(tick);
+  playing=P; P.cur=-1; prepNext(1); prepNext(2); P.raf=requestAnimationFrame(tick);
 }
 function tick(){
   const P=playing; if(!P) return; const t=actx.currentTime-P.t0; P.t=t;
@@ -1074,11 +1116,15 @@ function tick(){
   if(t>=plan.dur){endPlay(true); return;}
   const k=t<0?0:segAt(t);
   if(t>=0&&k!==P.cur){
-    const prev=plan.segs[P.cur]; if(prev){const c=S.clips[prev.clip]; if(c.kind==="video") c.els[prev.slot].pause();}
+    const prev=plan.segs[P.cur]; if(prev){const c=S.clips[prev.clip]; if(c.kind==="video"&&prev.slot!==undefined){const pv=c.els[prev.slot], nx=plan.segs[k]; if(!(nx&&nx.clip===prev.clip&&nx.slot===prev.slot)) pv.pause();}}
     P.cur=k; const s=plan.segs[k], c=S.clips[s.clip];
-    if(c.kind==="video"){const v=c.els[s.slot], sp=c.speed||1, want=s.src+(t-s.t)*sp; v.playbackRate=sp; if(Math.abs(v.currentTime-want)>0.25) v.currentTime=want; v.play().catch(()=>{});}
-    prepSeg(k+1);
+    if(c.kind==="video"){const v=c.els[s.slot], sp=c.speed||1, want=s.src+(t-s.t)*sp; v.playbackRate=sp; if(Math.abs(v.currentTime-want)>0.3) v.currentTime=want; if(v.paused) v.play().catch(()=>{});}
+    P.pre=-1; prepNext(k+1); prepNext(k+2);
   }
+  // pre-roll: the next shot was already lined up a moment before its in-point (prepNext); start it rolling PRE seconds early
+  const nk=P.cur+1, ns=plan.segs[nk];
+  if(t>=0&&ns&&P.pre!==nk&&ns.t-t<=PRE){P.pre=nk; const nc=S.clips[ns.clip];
+    if(nc.kind==="video"&&!sameEl(plan.segs[P.cur],ns)){const nv=nc.els[ns.slot]; if(nv.paused&&!nv.seeking&&nv.currentTime<ns.src-0.05){nv.playbackRate=nc.speed||1; nv.play().catch(()=>{});}}}
   drawFrame(Math.max(0,t)); drawOverview(Math.max(0,t)); drawLane(Math.max(0,t)); meter();
   if(t-P.lastUI>0.1){P.lastUI=t; $("#timeRO").textContent=`${fmt(Math.max(0,t))} / ${fmt(plan.dur)}`; if(P.record) status(`Recording in real time. Keep this tab in front until it finishes (${Math.max(0,plan.dur-t).toFixed(1)} s left).`);}
   P.raf=requestAnimationFrame(tick);
@@ -1118,10 +1164,11 @@ async function renderExport(){
   stopPlay(); hideResult(true);
   if(!window.VideoEncoder||!window.AudioEncoder||!window.VideoFrame||!window.AudioData){status("This browser can't build video frame by frame. Use Chrome or Edge.",true); return;}
   const R={cancel:false}; rendering=R; renderUI(true); status("Getting the encoder ready…");
+  canvasRes(true); // full size for the file
   plan=buildPlan(); stillTok++;
   const W=out.width,H=out.height,fps=S.fps,fi=1/fps,N=Math.max(1,Math.round(plan.dur*fps)),br=vbr();
   const buf=S.audio.buffer, sr=buf.sampleRate;
-  const quit=(msg,bad)=>{rendering=null; renderUI(false); S.clips.forEach(c=>c.els&&c.els.forEach(v=>{v.pause(); v.playbackRate=1;})); status(msg,bad); updateRO(); drawOverview(); drawLane(); renderStill();};
+  const quit=(msg,bad)=>{rendering=null; canvasRes(false); renderUI(false); S.clips.forEach(c=>c.els&&c.els.forEach(v=>{v.pause(); v.playbackRate=1;})); status(msg,bad); updateRO(); drawOverview(); drawLane(); renderStill();};
   let MX=null, vcfg=null, aok=false;
   try{MX=await getMuxer();}catch(e){}
   try{vcfg=await pickVideoConfig(W,H,fps,br);}catch(e){}
@@ -1210,7 +1257,7 @@ function finishExport(P){
   const base=(S.text.title||"beat-preview").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"beat-preview";
   lastExport={blob,url,ext,name:`${base}-${S.bpm}bpm-${S.aspect.replace(":","x")}.${ext}`};
   $("#resVideo").src=url;
-  $("#resMeta").textContent=`${ext.toUpperCase()} · ${out.width}×${out.height} · ${S.fps} fps · ${Math.round(vbr()/1e6)} Mbps · ${plan.dur.toFixed(1)} s · ${(blob.size/1048576).toFixed(1)} MB`;
+  $("#resMeta").textContent=`${ext.toUpperCase()} · ${exportDims().join("×")} · ${S.fps} fps · ${Math.round(vbr()/1e6)} Mbps · ${plan.dur.toFixed(1)} s · ${(blob.size/1048576).toFixed(1)} MB`;
   const notes=[];
   if(P.drops>S.fps*0.25) notes.push(`About ${P.drops} frames were dropped while recording, so motion may stutter. Try 30 fps and close other tabs.`);
   if(ext==="webm") notes.push("This browser records WebM. Instagram and TikTok want MP4, so run it through a converter (HandBrake, CapCut) before posting, or export from Chrome or Safari, which record MP4.");
