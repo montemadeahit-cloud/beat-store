@@ -182,24 +182,16 @@
   let lastTab = "quick";
   function openList(tab) {
     const { card, close } = modal(true);
-    const h = el("div", "mv-h", "<b>type beat videos</b>"); const x = el("button", "mv-x", "×"); x.onclick = close; h.appendChild(x);
-    const tabs = el("div", "mv-tabs");
-    const tq = el("button", "mv-tab", "quick video"), tb = el("button", "mv-tab", "store beats");
-    tabs.append(tq, tb);
+    const h = el("div", "mv-h", "<b>quick video</b>"); const x = el("button", "mv-x", "×"); x.onclick = close; h.appendChild(x);
     const body = el("div");
     const store = el("div", "mv-store");
-    card.append(h, tabs, store, body);
+    card.append(h, store, body);
     refreshStorage = () => getJSON("/api/admin/videos/storage").then(r => {
       const mb = r.bytes / 1048576;
-      store.textContent = `videos + photos are using ${mb < 1 ? mb.toFixed(2) : mb < 1024 ? mb.toFixed(0) : (mb / 1024).toFixed(1)} ${mb < 1024 ? "MB" : "GB"} on your server (${r.beatVideos} store beat video${r.beatVideos === 1 ? "" : "s"}, ${r.quickVideos} quick video${r.quickVideos === 1 ? "" : "s"})`;
+      store.textContent = `videos + photos are using ${mb < 1 ? mb.toFixed(2) : mb < 1024 ? mb.toFixed(0) : (mb / 1024).toFixed(1)} ${mb < 1024 ? "MB" : "GB"} on your server`;
     }).catch(() => { store.textContent = ""; });
     refreshStorage();
-    const show = t => {
-      lastTab = t; tq.classList.toggle("on", t === "quick"); tb.classList.toggle("on", t === "beats");
-      body.innerHTML = ""; body.appendChild(t === "quick" ? quickPanel() : beatsPanel());
-    };
-    tq.onclick = () => show("quick"); tb.onclick = () => show("beats");
-    show(tab || lastTab);
+    body.appendChild(quickPanel()); // quick video only (the "store beats" tab was removed)
   }
 
   function beatsPanel() {
@@ -345,13 +337,14 @@
   });
 
   /* notice when an mp3 upload finishes (fetch or XMLHttpRequest) */
+  const OFFER_AFTER_UPLOAD = false; // store beat videos are off: no "add a photo" popup after an mp3 upload. flip to true to bring it back
   const MP3 = /\/api\/admin\/beats\/([^/?#]+)\/full(?:[?#]|$)/;
   const LOGIN = /\/api\/admin\/login(?:[?#]|$)/;
   const seen = (url, method, ok) => {
     if (!ok) return;
     const u = String(url), m = String(method || "GET").toUpperCase();
     const hit = u.match(MP3);
-    if (hit && m === "PUT") setTimeout(() => offer(decodeURIComponent(hit[1])), 300);
+    if (hit && m === "PUT" && OFFER_AFTER_UPLOAD) setTimeout(() => offer(decodeURIComponent(hit[1])), 300);
     if (LOGIN.test(u)) setTimeout(checkAuth, 300);
   };
   window.fetch = async function (input, init) {
@@ -375,11 +368,11 @@
       if (!top || !top.isConnected || top.previousElementSibling !== vs) {
         top?.remove();
         top = document.createElement(vs.tagName === "A" ? "a" : "button");
-        top.className = vs.className; top.textContent = "yt videos"; top.dataset.mvTop = "1";
+        top.className = vs.className; top.textContent = "yt vids"; top.dataset.mvTop = "1";
         top.style.cssText = vs.style.cssText; // look exactly like "view site"
         const cs = getComputedStyle(vs);
         for (const k of ["color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform", "textDecoration", "lineHeight", "background", "border", "padding", "cursor"]) top.style[k] = cs[k];
-        if (top.tagName === "A") top.href = "#yt-videos"; else top.type = "button";
+        if (top.tagName === "A") top.href = "#yt-vids"; else top.type = "button";
         top.onclick = e => { e.preventDefault(); openList(); };
         const ps = getComputedStyle(vs.parentElement);
         if (!/flex|grid/.test(ps.display) || ps.columnGap === "normal" || ps.columnGap === "0px") top.style.marginLeft = "18px";
@@ -388,7 +381,7 @@
       btn?.remove(); btn = null;
     } else if (!btn || !btn.isConnected) {
       top?.remove(); top = null;
-      btn = el("button", "mv-btn", "yt videos"); btn.onclick = () => openList(); document.body.appendChild(btn);
+      btn = el("button", "mv-btn", "yt vids"); btn.onclick = () => openList(); document.body.appendChild(btn);
     }
   }
   let authed = false;
