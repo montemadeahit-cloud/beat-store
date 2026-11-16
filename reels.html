@@ -300,6 +300,7 @@ canvas.lane{width:100%;height:74px;display:block;border-radius:8px;background:#0
       <h3 id="resTitle">Your reel is ready</h3>
       <p class="meta" id="resMeta"></p>
       <div class="row">
+        <button class="btn primary" id="shareBtn" type="button" hidden>Save to camera roll</button>
         <button class="btn primary" id="saveBtn" type="button">Save video</button>
         <button class="btn" id="discardBtn" type="button">Discard</button>
       </div>
@@ -1162,7 +1163,7 @@ function renderUI(on){
 async function renderExport(){
   if(!S.audio||!S.clips.length||rendering) return;
   stopPlay(); hideResult(true);
-  if(!window.VideoEncoder||!window.AudioEncoder||!window.VideoFrame||!window.AudioData){status("This browser can't build video frame by frame. Use Chrome or Edge.",true); return;}
+  if(!window.VideoEncoder||!window.AudioEncoder||!window.VideoFrame||!window.AudioData){status(IS_IOS?"Exporting on an iPhone or iPad needs iOS 26 or newer (Settings › General › Software Update). You can still edit and preview here.":"This browser can't build video frame by frame. Use Chrome or Edge.",true); return;}
   const R={cancel:false}; rendering=R; renderUI(true); status("Getting the encoder ready…");
   canvasRes(true); // full size for the file
   plan=buildPlan(); stillTok++;
@@ -1181,7 +1182,7 @@ async function renderExport(){
   aok=!!acfg;
   if(!MX){quit("Couldn't load the MP4 writer. Check your connection and try again.",true); return;}
   if(!vcfg){quit(`This browser can't encode ${W}×${H} at ${fps} fps. Try 30 fps.`,true); return;}
-  if(!aok){quit("This browser can't encode AAC audio. Use Chrome or Edge.",true); return;}
+  if(!aok){quit(IS_IOS?"This iPhone can't encode the audio for export. Update to the latest iOS (Settings › General › Software Update).":"This browser can't encode AAC audio. Use Chrome or Edge.",true); return;}
   if(R.cancel){quit("Render cancelled."); return;}
   let err=null;
   const target=new MX.ArrayBufferTarget();
@@ -1247,6 +1248,10 @@ async function renderExport(){
   finishExport({completed:true,mime:"video/mp4",chunks:[blob],drops:0});
 }
 let lastExport=null;
+/* phones only: these switch on with a touch screen, so the editor on a computer is unchanged */
+const IS_PHONE=matchMedia("(pointer:coarse)").matches&&matchMedia("(hover:none)").matches;
+const IS_IOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const canShareFile=f=>{try{return !!(navigator.share&&navigator.canShare&&navigator.canShare({files:[f]}))}catch(e){return false}};
 const dlP=(window.claude&&window.claude.use)?window.claude.use("downloads").catch(()=>null):Promise.resolve(null);
 function hideResult(rec){if(rec){$("#result").hidden=true; if(lastExport){URL.revokeObjectURL(lastExport.url); lastExport=null;}}}
 function finishExport(P){
@@ -1256,17 +1261,26 @@ function finishExport(P){
   const url=URL.createObjectURL(blob);
   const base=(S.text.title||"beat-preview").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"beat-preview";
   lastExport={blob,url,ext,name:`${base}-${S.bpm}bpm-${S.aspect.replace(":","x")}.${ext}`};
+  lastExport.file=new File([blob],lastExport.name,{type});
+  const phoneShare=IS_PHONE&&canShareFile(lastExport.file); // phones: the share sheet has "Save Video" (straight to Photos) and Instagram/TikTok
+  $("#shareBtn").hidden=!phoneShare; $("#saveBtn").classList.toggle("primary",!phoneShare);
   $("#resVideo").src=url;
   $("#resMeta").textContent=`${ext.toUpperCase()} · ${exportDims().join("×")} · ${S.fps} fps · ${Math.round(vbr()/1e6)} Mbps · ${plan.dur.toFixed(1)} s · ${(blob.size/1048576).toFixed(1)} MB`;
   const notes=[];
   if(P.drops>S.fps*0.25) notes.push(`About ${P.drops} frames were dropped while recording, so motion may stutter. Try 30 fps and close other tabs.`);
   if(ext==="webm") notes.push("This browser records WebM. Instagram and TikTok want MP4, so run it through a converter (HandBrake, CapCut) before posting, or export from Chrome or Safari, which record MP4.");
-  notes.push("Sending it to your phone: email apps often play a compressed preview of attachments. AirDrop it, or save it from a cloud drive, to keep the full quality.");
+  notes.push(phoneShare?"Tap Save to camera roll, then Save Video to put it in your Photos. You can post it to Instagram or TikTok from the same menu."
+    :"Sending it to your phone: email apps often play a compressed preview of attachments. AirDrop it, or save it from a cloud drive, to keep the full quality.");
   $("#resNote").textContent=notes.join(" ");
   $("#result").hidden=false; status("Export finished.");
   $("#saveBtn").focus();
 }
 $("#discardBtn").onclick=()=>{hideResult(true); status("");};
+$("#shareBtn").onclick=async()=>{
+  if(!lastExport) return;
+  try{await navigator.share({files:[lastExport.file],title:lastExport.name}); $("#resNote").textContent="Done. If you picked Save Video, it's in your Photos.";}
+  catch(e){if(e&&e.name==="AbortError") return; $("#resNote").textContent="Couldn't open the share menu. Use Save video instead.";}
+};
 $("#saveBtn").onclick=async()=>{
   if(!lastExport) return; const dl=await dlP;
   if(!dl){const a=document.createElement("a"); a.href=lastExport.url; a.download=lastExport.name; document.body.appendChild(a); a.click(); a.remove(); $("#resNote").textContent=`Downloaded ${lastExport.name}.`; return;}
