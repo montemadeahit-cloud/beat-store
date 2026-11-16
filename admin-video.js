@@ -337,7 +337,7 @@
   });
 
   /* notice when an mp3 upload finishes (fetch or XMLHttpRequest) */
-  const OFFER_AFTER_UPLOAD = false; // store beat videos are off: no "add a photo" popup after an mp3 upload. flip to true to bring it back
+  const OFFER_AFTER_UPLOAD = true; // after an mp3 upload: popup to add a photo and make that beat's yt video. false turns it off
   const MP3 = /\/api\/admin\/beats\/([^/?#]+)\/full(?:[?#]|$)/;
   const LOGIN = /\/api\/admin\/login(?:[?#]|$)/;
   const seen = (url, method, ok) => {
