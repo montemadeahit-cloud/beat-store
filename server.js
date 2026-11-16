@@ -8,9 +8,7 @@ import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-/* the admin lives at a hard-to-guess address. set ADMIN_PATH in Railway to change it (letters, numbers and dashes);
-   otherwise it's the one below. /admin itself is a plain "not found", like any page that doesn't exist */
-const ADMIN = "/" + (String(process.env.ADMIN_PATH || "").replace(/[^a-z0-9-]/gi, "").replace(/^-+|-+$/g, "") || "studio-8g6kifjjged2rb");
+const ADMIN = "/admin"; // the admin page (plus /admin/reels and /admin/admin-video.js)
 const {
   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, ADMIN_PASSWORD, STRIPE_PUBLISHABLE_KEY = "", PRINTFUL_API_KEY = "",
   FROM_EMAIL = "montemadethis <onboarding@resend.dev>",
