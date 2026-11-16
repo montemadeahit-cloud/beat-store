@@ -8,6 +8,9 @@ import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+/* the admin lives at a hard-to-guess address. set ADMIN_PATH in Railway to change it (letters, numbers and dashes);
+   otherwise it's the one below. /admin itself is a plain "not found", like any page that doesn't exist */
+const ADMIN = "/" + (String(process.env.ADMIN_PATH || "").replace(/[^a-z0-9-]/gi, "").replace(/^-+|-+$/g, "") || "studio-8g6kifjjged2rb");
 const {
   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, RESEND_API_KEY, ADMIN_PASSWORD, STRIPE_PUBLISHABLE_KEY = "", PRINTFUL_API_KEY = "",
   FROM_EMAIL = "montemadethis <onboarding@resend.dev>",
@@ -162,7 +165,7 @@ const parseTeeMeta = m => String(m || "").split(",").filter(Boolean).map(x => { 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const TEMPLATE = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const ADMIN_PAGE = (() => { // admin.html + the type beat video tool (admin-video.js) added on top
-  const page = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8"), tag = `<script src="/admin-video.js" defer></script>`;
+  const page = fs.readFileSync(path.join(ROOT, "admin.html"), "utf8"), tag = `<script src="${ADMIN}/admin-video.js" defer></script>`;
   return /<\/body>/i.test(page) ? page.replace(/<\/body>(?![\s\S]*<\/body>)/i, tag + "</body>") : page + tag;
 })();
 function render(beat, req, tee) {
@@ -497,15 +500,15 @@ const requireAdmin = (req, res, next) =>
 const sha = s => crypto.createHash("sha256").update(String(s)).digest();
 const tries = new Map(); // ip -> {n, reset}  (stops password guessing)
 
-app.get("/admin", (_req, res) => {
+app.get(ADMIN, (_req, res) => {
   res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex" }).type("html").send(ADMIN_PAGE);
 });
 /* reels: the beat-synced reel editor (reels.html). admin only; runs entirely in the browser, nothing is uploaded */
-app.get("/admin/reels", (req, res) => {
-  if (!isAdmin(req)) return res.redirect("/admin");
+app.get(ADMIN + "/reels", (req, res) => {
+  if (!isAdmin(req)) return res.redirect(ADMIN);
   res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex", "X-Frame-Options": "SAMEORIGIN" }).sendFile(path.join(ROOT, "reels.html"));
 });
-app.get("/admin-video.js", (_req, res) => res.set({ "Cache-Control": "no-cache", "Content-Type": "text/javascript; charset=utf-8" }).sendFile(path.join(ROOT, "admin-video.js")));
+app.get(ADMIN + "/admin-video.js", (_req, res) => res.set({ "Cache-Control": "no-cache", "Content-Type": "text/javascript; charset=utf-8" }).sendFile(path.join(ROOT, "admin-video.js")));
 app.get("/api/admin/me", (req, res) => res.json({ authed: isAdmin(req), configured: !!ADMIN_PASSWORD, persistent: PERSISTENT }));
 app.get("/api/admin/settings", requireAdmin, (_req, res) => res.set("Cache-Control", "no-store").json(SETTINGS));
 app.patch("/api/admin/settings", requireAdmin, (req, res) => {
