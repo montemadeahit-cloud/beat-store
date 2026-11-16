@@ -500,10 +500,10 @@ const tries = new Map(); // ip -> {n, reset}  (stops password guessing)
 app.get("/admin", (_req, res) => {
   res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex" }).type("html").send(ADMIN_PAGE);
 });
-/* yt vids: the beat-synced video editor (yt-vids.html). admin only; runs entirely in the browser, nothing is uploaded */
-app.get("/admin/yt-vids", (req, res) => {
+/* reels: the beat-synced reel editor (reels.html). admin only; runs entirely in the browser, nothing is uploaded */
+app.get("/admin/reels", (req, res) => {
   if (!isAdmin(req)) return res.redirect("/admin");
-  res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex", "X-Frame-Options": "SAMEORIGIN" }).sendFile(path.join(ROOT, "yt-vids.html"));
+  res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex", "X-Frame-Options": "SAMEORIGIN" }).sendFile(path.join(ROOT, "reels.html"));
 });
 app.get("/admin-video.js", (_req, res) => res.set({ "Cache-Control": "no-cache", "Content-Type": "text/javascript; charset=utf-8" }).sendFile(path.join(ROOT, "admin-video.js")));
 app.get("/api/admin/me", (req, res) => res.json({ authed: isAdmin(req), configured: !!ADMIN_PASSWORD, persistent: PERSISTENT }));
