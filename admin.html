@@ -57,7 +57,7 @@ button,input{font:inherit;color:inherit}
 .seg button:hover{color:#fff}.seg button.on{background:#fff;color:#000;font-weight:900}
 .seg button:disabled{cursor:default}
 input[type=file]{color:var(--g);font-size:14px;max-width:100%}
-/* yt vids: the video editor gets the whole screen, separate from the beats section */
+/* reels: the video editor gets the whole screen, separate from the beats section */
 .yt{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column}
 .yt-bar{display:flex;align-items:center;gap:16px;height:52px;padding:0 20px;border-bottom:1px solid var(--hair);flex:none}
 .yt-bar h1{font-size:22px;margin-right:auto}
@@ -77,7 +77,7 @@ body.yt-on{overflow:hidden}
 </div>
 
 <div id="app" hidden>
-  <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytBtn">yt vids</button><button class="lnk" id="logout">log out</button></div></div>
+  <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytBtn">reels</button><button class="lnk" id="logout">log out</button></div></div>
   <div class="warn" id="vol" hidden><b>storage isn't attached yet.</b> anything you upload will disappear the next time the site redeploys. add a Volume in Railway first (see steps), then come back.</div>
 
   <div class="box">
@@ -102,7 +102,7 @@ body.yt-on{overflow:hidden}
 
 </div>
 <div class="yt" id="yt" hidden>
-  <div class="yt-bar"><h1>yt vids</h1><button class="lnk" id="ytBack">← your beats</button><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytOut">log out</button></div>
+  <div class="yt-bar"><h1>reels</h1><button class="lnk" id="ytBack">← your beats</button><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytOut">log out</button></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -154,14 +154,14 @@ async function boot(){
   $("#login").hidden=true;$("#app").hidden=false;$("#vol").hidden=me.persistent;
   loadSettings();
   load();
-  if(location.hash==="#yt-vids")showYt(true,true);
+  if(location.hash==="#reels")showYt(true,true);
 }
-/* yt vids: opens the editor in its own section. it stays loaded when you go back to your beats, so nothing you're working on is lost */
+/* reels: opens the editor in its own section. it stays loaded when you go back to your beats, so nothing you're working on is lost */
 function showYt(on,quiet){
   const yt=$("#yt");
-  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src="/admin/yt-vids";f.title="yt vids editor";f.allow="clipboard-read; clipboard-write";yt.appendChild(f)}
+  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src="/admin/reels";f.title="reels editor";f.allow="clipboard-read; clipboard-write";yt.appendChild(f)}
   yt.hidden=!on;document.body.classList.toggle("yt-on",on);
-  if(!quiet)history.replaceState(null,"",on?"#yt-vids":location.pathname);
+  if(!quiet)history.replaceState(null,"",on?"#reels":location.pathname);
   if(on)setTimeout(()=>yt.querySelector("iframe")?.focus(),50);
 }
 $("#ytBtn").onclick=()=>showYt(true);
