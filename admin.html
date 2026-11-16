@@ -57,6 +57,12 @@ button,input{font:inherit;color:inherit}
 .seg button:hover{color:#fff}.seg button.on{background:#fff;color:#000;font-weight:900}
 .seg button:disabled{cursor:default}
 input[type=file]{color:var(--g);font-size:14px;max-width:100%}
+.btn.sm{padding:4px 14px;font-size:14px;margin-left:10px;vertical-align:middle}
+.forder{border:1px solid var(--hair);border-radius:12px;padding:4px 14px;margin:8px 0 4px}
+.forder .fr{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--hair)}.forder .fr:first-child{border-top:0}
+.forder .fn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.forder .fp{color:var(--g);width:28px}
+.forder .mv{width:32px;height:32px;border-radius:50%;border:1px solid var(--hair);background:none;color:#fff;cursor:pointer;padding:0;font-size:13px}
+.forder .mv:hover{background:#fff;color:#000}.forder .mv:disabled{opacity:.25;cursor:default;background:none;color:#fff}
 /* reels: the video editor gets the whole screen, separate from the beats section */
 .yt{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column}
 .yt-bar{display:flex;align-items:center;gap:16px;height:52px;padding:0 20px;border-bottom:1px solid var(--hair);flex:none}
@@ -84,7 +90,8 @@ body.yt-on{overflow:hidden}
     <h2>add a beat</h2>
     <div class="row3"><input class="in" id="nName" placeholder="beat name"><input class="in" id="nGenre" placeholder="genre (optional)" maxlength="24"><input class="in" id="nBpm" type="number" placeholder="bpm"><input class="in" id="nPrice" type="number" placeholder="$ price"></div>
     <input class="in" id="nCo" placeholder="co-producers (optional, separate with commas)" maxlength="120" style="margin-bottom:6px">
-    <label class="chk"><input type="checkbox" id="nFeat"> featured</label> <span class="st" id="featCount"></span>
+    <label class="chk"><input type="checkbox" id="nFeat"> featured</label> <button class="btn ghost sm" id="fOrderBtn" type="button" aria-expanded="false">order</button>
+    <div class="forder" id="fOrder" hidden></div>
     <label class="lab">mp3 file (people can listen on the site, and buyers get it after paying)</label><input type="file" id="nFull" accept=".mp3,audio/mpeg">
     <div class="bar" id="nBar"><i></i></div>
     <div class="acts"><button class="btn" id="nAdd">add beat</button><span class="st" id="nSt"></span></div>
@@ -132,18 +139,50 @@ const statsHtml=st=>{const p=st.plays||0,a=st.adds||0,sec=st.secs||0;return `
   <div class="sg"><div><b>${p}</b><span>listens</span></div><div><b>${a}</b><span>added to cart</span></div><div><b>${dur(sec)}</b><span>total time listened</span></div><div><b>${p?dur(sec/p):"–"}</b><span>avg per listen</span></div></div>
   <p class="sn">${st.since?`counting since ${new Date(st.since).toLocaleDateString()}. `:""}your own plays while logged in aren't counted.</p>`};
 const fileOk=f=>f&&/\.mp3$/i.test(f.name);
-async function peaksOf(buf){
-  const AC=window.AudioContext||window.webkitAudioContext,ac=new AC(),ab=await ac.decodeAudioData(buf);ac.close();
+async function decodeAudio(buf){const AC=window.AudioContext||window.webkitAudioContext,ac=new AC();try{return await ac.decodeAudioData(buf)}finally{ac.close()}}
+async function peaksOf(buf){return peaksFrom(await decodeAudio(buf))}
+/* audio fingerprint for the duplicate check: loudness every 0.1 s in two bands (kick/bass under 150 Hz, and the full mix),
+   in half-dB steps. stored as [bass..., full...]. the same beat matches even as a different export, bitrate or a louder master */
+const FP_HZ=10;
+function fpFrom(ab,phase=0){ // phase: start part-way into the first step (used to line up with copies that are shifted slightly)
+  const A0=ab.getChannelData(0),B0=ab.numberOfChannels>1?ab.getChannelData(1):null,sr=ab.sampleRate,w=Math.floor(sr/FP_HZ),o=Math.floor(phase*w),A=o?A0.subarray(o):A0,B=B0&&o?B0.subarray(o):B0,N=Math.min(6000,Math.floor(A.length/w));
+  const k=Math.exp(-2*Math.PI*150/sr),lo=[],full=[];let l1=0,l2=0;
+  const db=e=>Math.max(-200,Math.min(0,Math.round(20*Math.log10(Math.sqrt(e/w)+1e-10))));
+  for(let f=0;f<N;f++){let el=0,ef=0;for(let j=f*w,e=j+w;j<e;j++){const v=B?(A[j]+B[j])/2:A[j];l1=(1-k)*v+k*l1;l2=(1-k)*l1+k*l2;el+=l2*l2;ef+=v*v}lo.push(db(el*4));full.push(db(ef))}
+  return lo.concat(full);
+}
+function detrend(a){ // keep the rhythm, drop the slow rise and fall of the song's sections
+  const x=a.map(v=>Math.max(v,-120)),n=x.length,R=10,pre=[0];for(let i=0;i<n;i++)pre.push(pre[i]+x[i]);
+  return x.map((v,i)=>{const lo=Math.max(0,i-R),hi=Math.min(n,i+R+1);return v-(pre[hi]-pre[lo])/(hi-lo)});
+}
+function corrBest(a,b,maxLag){
+  const L=Math.min(a.length,b.length);let best=-1;
+  for(let lag=-maxLag;lag<=maxLag;lag++){
+    let n=0,sa=0,sb=0,saa=0,sbb=0,sab=0;
+    for(let i=Math.max(0,-lag),e=Math.min(a.length,b.length-lag);i<e;i++){const x=a[i],y=b[i+lag];n++;sa+=x;sb+=y;saa+=x*x;sbb+=y*y;sab+=x*y}
+    if(n<.8*L)continue;const va=saa/n-(sa/n)**2,vb=sbb/n-(sb/n)**2;if(va<.5||vb<.5)continue;
+    best=Math.max(best,(sab/n-sa/n*sb/n)/Math.sqrt(va*vb));
+  }
+  return best;
+}
+function sameAudio(a,b){ // 0..1, how closely two fingerprints line up (allows up to 3 s of offset); both bands have to match
+  if(!a||!b||a.length<16||b.length<16||a.length%2||b.length%2)return 0;
+  const h=a.length/2,g=b.length/2;if(Math.min(h,g)<.8*Math.max(h,g))return 0; // lengths within 20%
+  const sp=(x,m)=>[detrend(x.slice(0,m)),detrend(x.slice(m))],[al,af]=sp(a,h),[bl,bf]=sp(b,g);
+  return Math.max(0,Math.min(corrBest(al,bl,3*FP_HZ),corrBest(af,bf,3*FP_HZ)));
+}
+const MATCH=.82; // re-exports of the same beat score .9 to 1, different beats stay well under
+function peaksFrom(ab){
   const ch=ab.getChannelData(0),n=120,per=Math.floor(ch.length/n),pk=[];
   for(let i=0;i<n;i++){let m=0;const st=Math.max(1,per>>8);for(let j=i*per;j<(i+1)*per;j+=st){const v=Math.abs(ch[j]);if(v>m)m=v}pk.push(m)}
   const mx=Math.max(...pk)||1;return pk.map(v=>Math.round(Math.min(1,Math.max(.08,Math.pow(v/mx,.75)))*100)/100);
 }
-async function savePeaks(slug,file){try{await api("PATCH","/api/admin/beats/"+slug,{peaks:await peaksOf(await file.arrayBuffer())})}catch(e){console.error("waveform",e)}}
+async function savePeaks(slug,file,ab){try{ab=ab||await decodeAudio(await file.arrayBuffer());await api("PATCH","/api/admin/beats/"+slug,{peaks:peaksFrom(ab),fp:fpFrom(ab)})}catch(e){console.error("waveform",e)}}
 let filling=false;
 async function backfill(beats){ // beats uploaded before waveforms existed get one automatically
   if(filling)return;filling=true;
-  for(const b of beats){if(b.hasFull&&!(b.peaks&&b.peaks.length>=120)){
-    try{const r=await fetch("/audio/"+b.slug+".mp3");await api("PATCH","/api/admin/beats/"+b.slug,{peaks:await peaksOf(await r.arrayBuffer())})}catch(e){console.error("waveform",e)}}}
+  for(const b of beats){if(b.hasFull&&(!(b.peaks&&b.peaks.length>=120)||!(b.fp&&b.fp.length))){ // missing waveform or fingerprint
+    try{const r=await fetch("/audio/"+b.slug+".mp3"),ab=await decodeAudio(await r.arrayBuffer());await api("PATCH","/api/admin/beats/"+b.slug,{peaks:peaksFrom(ab),fp:fpFrom(ab)})}catch(e){console.error("waveform",e)}}}
   filling=false;
 }
 
@@ -183,7 +222,7 @@ $("#sTee").onclick=async e=>{
 async function load(){
   const beats=await api("GET","/api/admin/beats"),box=$("#list"),nFeat=beats.filter(b=>b.featured).length;
   const posSel=b=>b.featured?`<select class="fpos" data-pos aria-label="featured spot for ${esc(b.name)}" title="order on the homepage, #1 is on top">${Array.from({length:nFeat},(_,i)=>`<option value="${i+1}"${(b.featPos||0)===i+1?" selected":""}>#${i+1}</option>`).join("")}</select>`:"";
-  $("#featCount").textContent=`(${beats.filter(b=>b.featured).length}/5 featured · a 6th replaces the oldest)`;
+  FEATURED=beats.filter(b=>b.featured).sort((a,b)=>(a.featPos||99)-(b.featPos||99));renderOrder();
   if(!beats.length){box.innerHTML='<p class="empty">no beats yet. add your first one above.</p>';return}
   box.innerHTML=beats.map(b=>`
   <div class="box" data-slug="${esc(b.slug)}">
@@ -199,6 +238,20 @@ async function load(){
   </div>`).join("");
   backfill(beats);
 }
+/* featured order: the "order" button lists your featured beats top to bottom (#1 is first on the homepage); ▲▼ moves one */
+let FEATURED=[];
+function renderOrder(){
+  const box=$("#fOrder");
+  box.innerHTML=FEATURED.length?FEATURED.map((b,i)=>`<div class="fr" data-slug="${esc(b.slug)}"><span class="fp">#${i+1}</span><span class="fn">${esc(b.name)}</span><button class="mv" data-to="${i}" aria-label="move ${esc(b.name)} up"${i?"":" disabled"}>▲</button><button class="mv" data-to="${i+2}" aria-label="move ${esc(b.name)} down"${i<FEATURED.length-1?"":" disabled"}>▼</button></div>`).join("")
+    :'<p class="empty" style="margin:10px 0">no featured beats yet. tick "featured" on a beat to add it.</p>';
+}
+$("#fOrderBtn").onclick=()=>{const box=$("#fOrder");box.hidden=!box.hidden;$("#fOrderBtn").setAttribute("aria-expanded",!box.hidden);renderOrder()};
+$("#fOrder").onclick=async e=>{
+  const b=e.target.closest("[data-to]");if(!b||b.disabled)return;
+  $("#fOrder").querySelectorAll("button").forEach(x=>x.disabled=true);
+  try{await api("PATCH","/api/admin/beats/"+b.closest("[data-slug]").dataset.slug,{featPos:+b.dataset.to});await load()}
+  catch(err){alert(err.message);renderOrder()}
+};
 $("#list").addEventListener("click",e=>{ // ⓘ toggles that beat's stats
   const b=e.target.closest("[data-info]");if(!b)return;const box=b.closest("[data-slug]").querySelector(".stats");
   box.hidden=!box.hidden;b.setAttribute("aria-expanded",!box.hidden);
@@ -240,6 +293,7 @@ $("#list").addEventListener("change",async e=>{
   catch(err){st.textContent=err.message;st.style.color="#ff6b6b"}
 });
 
+let dupOk=null; // file you chose to upload anyway after a match
 $("#nAdd").onclick=async()=>{
   const st=$("#nSt"),bar=$("#nBar"),btn=$("#nAdd"),fl=$("#nFull").files[0];
   st.style.color="#ff6b6b";
@@ -247,13 +301,23 @@ $("#nAdd").onclick=async()=>{
   if(!$("#nBpm").value)return st.textContent="enter the bpm";
   if(!$("#nPrice").value)return st.textContent="enter a price";
   if(!fileOk(fl))return st.textContent="choose the .mp3 file";
-  btn.disabled=true;st.style.color="";bar.style.display="block";
+  btn.disabled=true;st.style.color="";
+  /* duplicate check: does this audio match a beat that's already uploaded? */
+  let ab=null;
+  try{
+    st.textContent="checking for duplicates…";ab=await decodeAudio(await fl.arrayBuffer());
+    const fps=[fpFrom(ab),fpFrom(ab,.5)],key=fl.name+"|"+fl.size+"|"+fl.lastModified;
+    const hits=(await api("GET","/api/admin/beats")).filter(b=>b.fp&&Math.max(...fps.map(f=>sameAudio(f,b.fp)))>=MATCH).map(b=>b.name);
+    if(hits.length&&dupOk!==key){dupOk=key;btn.disabled=false;st.style.color="#ff6b6b";
+      st.textContent=`audio matches: ${hits.join(", ")}. not uploaded. click add beat again to upload it anyway.`;return}
+  }catch(e){console.error("duplicate check",e)} // if the check can't run, the upload still goes ahead
+  dupOk=null;bar.style.display="block";
   let slug=null;
   try{
     const b=window.__lastAdd=await api("POST","/api/admin/beats",{name:$("#nName").value,genre:$("#nGenre").value,coprod:$("#nCo").value,bpm:$("#nBpm").value,price:$("#nPrice").value,featured:$("#nFeat").checked});
     slug=b.slug;
     await upload(slug,"full",fl,p=>{bar.firstElementChild.style.width=Math.round(p*100)+"%";st.textContent="uploading "+Math.round(p*100)+"%"});
-    st.textContent="building waveform…";await savePeaks(slug,fl);
+    st.textContent="building waveform…";await savePeaks(slug,fl,ab);
     st.textContent="added! it's live."+bumpMsg(window.__lastAdd||{});
     ["#nName","#nGenre","#nCo","#nBpm","#nPrice","#nFull"].forEach(i=>$(i).value="");$("#nFeat").checked=false;
     bar.style.display="none";bar.firstElementChild.style.width="0";
