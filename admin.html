@@ -57,6 +57,12 @@ button,input{font:inherit;color:inherit}
 .seg button:hover{color:#fff}.seg button.on{background:#fff;color:#000;font-weight:900}
 .seg button:disabled{cursor:default}
 input[type=file]{color:var(--g);font-size:14px;max-width:100%}
+/* yt vids: the video editor gets the whole screen, separate from the beats section */
+.yt{position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column}
+.yt-bar{display:flex;align-items:center;gap:16px;height:52px;padding:0 20px;border-bottom:1px solid var(--hair);flex:none}
+.yt-bar h1{font-size:22px;margin-right:auto}
+.yt iframe{flex:1;width:100%;border:0;display:block;background:#101012}
+body.yt-on{overflow:hidden}
 </style>
 </head>
 <body><div class="w">
@@ -71,7 +77,7 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
 </div>
 
 <div id="app" hidden>
-  <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="logout">log out</button></div></div>
+  <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytBtn">yt vids</button><button class="lnk" id="logout">log out</button></div></div>
   <div class="warn" id="vol" hidden><b>storage isn't attached yet.</b> anything you upload will disappear the next time the site redeploys. add a Volume in Railway first (see steps), then come back.</div>
 
   <div class="box">
@@ -95,10 +101,13 @@ input[type=file]{color:var(--g);font-size:14px;max-width:100%}
 </div>
 
 </div>
+<div class="yt" id="yt" hidden>
+  <div class="yt-bar"><h1>yt vids</h1><button class="lnk" id="ytBack">← your beats</button><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytOut">log out</button></div>
+</div>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-function showLogin(msg){$("#app").hidden=true;$("#login").hidden=false;$("#loginErr").textContent=msg||"";}
+function showLogin(msg){showYt(false,true);$("#app").hidden=true;$("#login").hidden=false;$("#loginErr").textContent=msg||"";}
 async function api(method,url,body){
   const r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});
   if(r.status===401&&!url.includes("login")){showLogin();throw new Error("please log in")}
@@ -145,7 +154,19 @@ async function boot(){
   $("#login").hidden=true;$("#app").hidden=false;$("#vol").hidden=me.persistent;
   loadSettings();
   load();
+  if(location.hash==="#yt-vids")showYt(true,true);
 }
+/* yt vids: opens the editor in its own section. it stays loaded when you go back to your beats, so nothing you're working on is lost */
+function showYt(on,quiet){
+  const yt=$("#yt");
+  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src="/admin/yt-vids";f.title="yt vids editor";f.allow="clipboard-read; clipboard-write";yt.appendChild(f)}
+  yt.hidden=!on;document.body.classList.toggle("yt-on",on);
+  if(!quiet)history.replaceState(null,"",on?"#yt-vids":location.pathname);
+  if(on)setTimeout(()=>yt.querySelector("iframe")?.focus(),50);
+}
+$("#ytBtn").onclick=()=>showYt(true);
+$("#ytBack").onclick=()=>showYt(false);
+$("#ytOut").onclick=()=>$("#logout").click();
 function showTeeSeg(on){document.querySelectorAll("#sTee button").forEach(b=>{const me=(b.dataset.v==="1")===on;b.classList.toggle("on",me);b.setAttribute("aria-checked",me)})}
 async function loadSettings(){
   try{const s=await api("GET","/api/admin/settings");showTeeSeg(!!s.teePreview)}catch(e){console.error("settings",e)}
