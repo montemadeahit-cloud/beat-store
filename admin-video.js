@@ -375,11 +375,11 @@
       if (!top || !top.isConnected || top.previousElementSibling !== vs) {
         top?.remove();
         top = document.createElement(vs.tagName === "A" ? "a" : "button");
-        top.className = vs.className; top.textContent = "videos"; top.dataset.mvTop = "1";
+        top.className = vs.className; top.textContent = "yt videos"; top.dataset.mvTop = "1";
         top.style.cssText = vs.style.cssText; // look exactly like "view site"
         const cs = getComputedStyle(vs);
         for (const k of ["color", "fontFamily", "fontSize", "fontWeight", "letterSpacing", "textTransform", "textDecoration", "lineHeight", "background", "border", "padding", "cursor"]) top.style[k] = cs[k];
-        if (top.tagName === "A") top.href = "#videos"; else top.type = "button";
+        if (top.tagName === "A") top.href = "#yt-videos"; else top.type = "button";
         top.onclick = e => { e.preventDefault(); openList(); };
         const ps = getComputedStyle(vs.parentElement);
         if (!/flex|grid/.test(ps.display) || ps.columnGap === "normal" || ps.columnGap === "0px") top.style.marginLeft = "18px";
@@ -388,7 +388,7 @@
       btn?.remove(); btn = null;
     } else if (!btn || !btn.isConnected) {
       top?.remove(); top = null;
-      btn = el("button", "mv-btn", "videos"); btn.onclick = () => openList(); document.body.appendChild(btn);
+      btn = el("button", "mv-btn", "yt videos"); btn.onclick = () => openList(); document.body.appendChild(btn);
     }
   }
   let authed = false;
