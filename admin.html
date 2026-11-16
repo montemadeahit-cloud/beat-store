@@ -87,7 +87,7 @@ body.yt-on{overflow:hidden}
 </div>
 
 <div id="app" hidden>
-  <div class="top"><h1>your beats</h1><div><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytBtn">reels</button><button class="lnk" id="logout">log out</button></div></div>
+  <div class="top"><h1>your beats</h1><div><button class="lnk" id="ytBtn">reels</button><button class="lnk" id="logout">log out</button></div></div>
   <div class="warn" id="vol" hidden><b>storage isn't attached yet.</b> anything you upload will disappear the next time the site redeploys. add a Volume in Railway first (see steps), then come back.</div>
 
   <div class="box">
@@ -113,7 +113,7 @@ body.yt-on{overflow:hidden}
 
 </div>
 <div class="yt" id="yt" hidden>
-  <div class="yt-bar"><h1>reels</h1><button class="lnk" id="ytBack">← your beats</button><a class="lnk" href="/" target="_blank">view site</a><button class="lnk" id="ytOut">log out</button></div>
+  <div class="yt-bar"><h1>reels</h1><button class="lnk" id="ytBack">← your beats</button><button class="lnk" id="ytOut">log out</button></div>
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -202,7 +202,7 @@ async function boot(){
 /* reels: opens the editor in its own section. it stays loaded when you go back to your beats, so nothing you're working on is lost */
 function showYt(on,quiet){
   const yt=$("#yt");
-  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src="/admin/reels";f.title="reels editor";f.allow="clipboard-read; clipboard-write";yt.appendChild(f)}
+  if(on&&!yt.querySelector("iframe")){const f=document.createElement("iframe");f.src=location.pathname.replace(/\/+$/,"")+"/reels";f.title="reels editor";f.allow="clipboard-read; clipboard-write";yt.appendChild(f)}
   yt.hidden=!on;document.body.classList.toggle("yt-on",on);
   if(!quiet)history.replaceState(null,"",on?"#reels":location.pathname);
   if(on)setTimeout(()=>yt.querySelector("iframe")?.focus(),50);
