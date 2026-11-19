@@ -601,7 +601,8 @@ function bassAt(t){ // sub-bass energy at time t in the section, gated so soft l
   const an=S.an; if(!an||!plan) return 0; const f=(plan.rs+t)*an.fr, i=Math.floor(f);
   if(i<0||i+1>=an.sub.length) return 0; const x=an.sub[i]+(an.sub[i+1]-an.sub[i])*(f-i);
   return Math.pow(Math.max(0,(x-0.32)/0.68),1.4);}
-function drawCover(ctx,v,W,H){const vw=v.videoWidth,vh=v.videoHeight; if(!vw||v.readyState<2) return false; const r=Math.max(W/vw,H/vh), dw=vw*r, dh=vh*r; ctx.drawImage(v,(W-dw)/2,(H-dh)/2,dw,dh); return true;}
+const HELD=new Map(); // export: the exact frame snapshot to draw for a player, instead of whatever it's showing right now
+function drawCover(ctx,v,W,H){const f=HELD.get(v), src=f||v, vw=f?f.displayWidth:v.videoWidth, vh=f?f.displayHeight:v.videoHeight; if(!vw||(!f&&v.readyState<2)) return false; const r=Math.max(W/vw,H/vh), dw=vw*r, dh=vh*r; ctx.drawImage(src,(W-dw)/2,(H-dh)/2,dw,dh); return true;}
 let vigC=null; // the bass-shake vignette, built once per size
 const blurC=document.createElement("canvas"), blurX=blurC.getContext("2d"); // scratch canvas for the soft blur
 function drawFrame(t){
@@ -1274,25 +1275,48 @@ async function renderExport(){
     while(venc.encodeQueueSize>4&&!err) await sleep(2);
     const now=performance.now(); if(now-lastUI>150||i===N){lastUI=now; const el=(now-tStart)/1000, rf=i/Math.max(0.001,el), left=(N-i)/Math.max(0.01,rf);
       status(`Rendering frame ${i} of ${N} (${Math.round(i/N*100)}%) · ${rf.toFixed(1)} frames/s · about ${left>=60?Math.floor(left/60)+" min ":""}${Math.round(left%60)} s left.`+(R.seekMode?" Your browser stopped handing over video frames, so it's seeking frame by frame, which is slower.":" Keep this tab open.")); drawLane(t); drawOverview(t); $("#timeRO").textContent=`${fmt(t)} / ${fmt(plan.dur)}`;}};
-  const rate=0.5; // play footage at half speed so the frames we need are all caught
-  // follow a playing video frame by frame; pause while each frame is drawn and encoded
+  /* follow a playing video frame by frame, faster than real time when the computer keeps up.
+     each frame the browser hands over is snapshotted on the spot, and every export frame is drawn from the
+     snapshot of the source frame it falls on (the latest one at or before its moment), so timing is exact no matter
+     how fast it plays. if the browser ever skips a frame we needed, it jumps back for it and slows down.
+     speed tops out around 48 footage frames a second (1.6x for 30 fps clips) */
+  R.cap=2.5; R.fdur=0; R.skips=0; R.clean=0;
+  const rateNow=()=>Math.max(0.5,Math.min(R.cap,R.fdur?48*R.fdur:1));
   const follow=(v,srcAt,endI)=>new Promise(resolve=>{
-    let done=false, busy=false, timer=0, tok=0;
-    const finish=()=>{if(done) return; done=true; clearTimeout(timer); tok++; v.pause(); v.removeEventListener("ended",onEnd); resolve();};
-    const step=async mt=>{if(done||busy) return; busy=true; tok++; clearTimeout(timer);
-      try{while(i<endI&&srcAt(i)<=mt+0.004&&!stop()){ if(venc.encodeQueueSize>3&&!v.paused) v.pause(); await emit(); }}catch(e){err=err||e;}
+    let done=false, busy=false, timer=0, tok=0, lastMT=null, fresh=2, held=null;
+    const snap=()=>{try{return new VideoFrame(v);}catch(e){return null;}};
+    const hold=f=>{if(held&&held!==f) held.close(); held=f; if(f) HELD.set(v,f); else HELD.delete(v);};
+    const finish=()=>{if(done) return; done=true; clearTimeout(timer); tok++; v.pause(); v.removeEventListener("ended",onEnd); hold(null); resolve();};
+    const restart=()=>{lastMT=null; fresh=2; hold(snap());}; // player is paused exactly on srcAt(i): hold that frame
+    const step=async(mt,fromFrame,shot)=>{if(done||busy){if(shot) shot.close(); return;} busy=true; tok++; clearTimeout(timer);
+      try{
+        if(!fromFrame){if(mt!==Infinity) restart();}
+        else{
+          if(fresh>0){fresh--; if(fresh>0){lastMT=null;}} // the first callback after a jump can report the jump position, not a frame time
+          if(lastMT!=null){const d=mt-lastMT; if(d>0.012&&d<0.2) R.fdur=R.fdur?Math.min(R.fdur,d):d;
+            // a frame we needed went by unseen: go back for it and slow down
+            if(R.fdur&&d>R.fdur*1.5&&i<endI&&srcAt(i)<mt-R.fdur*0.5){v.pause(); if(shot){shot.close(); shot=null;} R.skips++; R.clean=0; R.cap=Math.max(0.5,rateNow()*0.75); await seekTo(v,srcAt(i)); restart(); mt=null;}}
+          if(mt!=null){
+            while(i<endI&&srcAt(i)<mt-0.0005&&!stop()) await emit(); // still the previous frame's moment
+            hold(shot||snap()); shot=null; if(fresh===0) lastMT=mt; else if(fresh===1) lastMT=null;
+            if(++R.clean>=24){R.clean=0; R.cap=Math.min(2.5,R.cap*1.15);}}}
+        if(mt!=null&&mt!==Infinity) while(i<endI&&srcAt(i)<=(mt??v.currentTime)+0.0005&&!stop()){ if(venc.encodeQueueSize>3&&!v.paused) v.pause(); await emit(); }
+      }catch(e){err=err||e;}
+      if(shot){shot.close(); shot=null;}
       if(i<endI&&!stop()&&v.ended){try{while(i<endI&&!stop()) await emit();}catch(e){err=err||e;}}
       busy=false;
       if(i>=endI||stop()) return finish();
-      arm(); if(v.paused) v.play().catch(()=>{});};
-    const arm=()=>{const my=++tok; timer=setTimeout(()=>stall(my),800);
-      v.requestVideoFrameCallback((now,meta)=>{if(my===tok) step(meta.mediaTime);});};
-    const stall=async my=>{if(my!==tok||done||busy) return; tok++; busy=true; v.pause(); R.seekMode=true; // no frame callback (tab hidden or browser not sending them): seek each frame for the rest
+      v.playbackRate=rateNow(); arm(); if(v.paused) v.play().catch(()=>{});};
+    const arm=()=>{const my=++tok; timer=setTimeout(()=>stall(my),1500);
+      v.requestVideoFrameCallback((now,meta)=>{if(my!==tok) return; const shot=snap(); // snapshot this frame right now, before the player moves on
+        if(i<endI&&srcAt(i)<meta.mediaTime-0.0005&&srcAt(i+1)<meta.mediaTime) v.pause(); // several frames to write before this one: hold the player so none go by
+        step(meta.mediaTime,true,shot);});};
+    const stall=async my=>{if(my!==tok||done||busy) return; tok++; busy=true; v.pause(); hold(null); R.seekMode=true; // no frame callback (tab hidden or browser not sending them): seek each frame for the rest
       try{while(i<endI&&!stop()){await seekTo(v,srcAt(i)); await emit();}}catch(e){err=err||e;}
       busy=false; finish();};
     const onEnd=()=>{if(!busy) step(Infinity);};
-    v.addEventListener("ended",onEnd); v.playbackRate=rate;
-    step(v.currentTime);
+    v.addEventListener("ended",onEnd);
+    step(v.currentTime,false);
   });
   try{
     for(let k=0;k<plan.segs.length&&i<N&&!stop();k++){
@@ -1307,7 +1331,7 @@ async function renderExport(){
         while(i<tEnd&&!stop()){await seekTo(v,srcAt(i)); await seekTo(pv,pAt(i)); await emit();}
         pv.pause();
         if(i>=endI) continue;}
-      await seekTo(v,srcAt(i));
+      {const x=srcAt(i), ahead=v.currentTime-x; if(!(v.readyState>=2&&ahead<=0.001&&ahead>-0.35)||R.seekMode||!v.requestVideoFrameCallback) await seekTo(v,x);} // already lined up (continuing clip): no seek
       if(v.requestVideoFrameCallback&&!R.seekMode) await follow(v,srcAt,endI);
       else while(i<endI&&!stop()){await seekTo(v,srcAt(i)); await emit();}
       v.pause(); v.playbackRate=1;
