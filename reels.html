@@ -70,7 +70,7 @@ select option,select optgroup{background:#1b1b1e;color:var(--fg)}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;color:var(--fg)}
 .hint{font-size:10.5px;color:var(--muted);margin:0}
 .hint.warn{color:var(--danger)}
-#patHint,#orderHint{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.8em}
+#patHint,#orderHint,#trHint{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.8em}
 #lenHint:not(.warn),#qualHint{display:none}
 
 /* media */
@@ -119,6 +119,9 @@ select option,select optgroup{background:#1b1b1e;color:var(--fg)}
 #lenChips .btn{flex:1;padding:3px 0;font-size:10.5px}
 #lenChips .btn[aria-pressed="true"]{background:var(--pearl);color:var(--accent-ink);border-color:transparent}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.fxgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.fx{display:flex;flex-direction:column;gap:4px;min-width:0}.fx label{font-size:11px;font-weight:500}
+#trLenSeg button{padding:4px 4px;font-size:10.5px}
 
 /* preview */
 .stage{grid-area:stage;min-height:0;min-width:0;display:flex;flex-direction:column;gap:8px;padding:8px}
@@ -237,9 +240,19 @@ canvas.lane{width:100%;height:74px;display:block;border-radius:8px;background:#0
       </div>
       <p class="hint" id="patHint"></p>
     </div>
-    <div class="field" title="Breaks up the even rhythm: some shots hang longer, some cuts land early, some double up. ↻ rolls a new variation.">
-      <div class="row between"><label class="label" for="staggerIn">Stagger</label><span class="mono" id="staggerRO">0%</span></div>
-      <input type="range" id="staggerIn" min="0" max="100" step="5">
+    <div class="field"><span class="label">Transition</span>
+      <div class="row" style="flex-wrap:nowrap;gap:4px">
+        <button class="btn sm" id="trPrev" type="button" aria-label="Previous transition">‹</button>
+        <select id="trSel" aria-label="Transition between clips"></select>
+        <button class="btn sm" id="trNext" type="button" aria-label="Next transition">›</button>
+      </div>
+      <div class="seg" id="trLenSeg" title="How long the transition lasts, in beats">
+        <button type="button" data-v="0.125">⅛ beat</button>
+        <button type="button" data-v="0.25">¼</button>
+        <button type="button" data-v="0.5">½</button>
+        <button type="button" data-v="1">1 beat</button>
+      </div>
+      <p class="hint" id="trHint"></p>
     </div>
     <div class="field">
       <div class="row between"><span class="label">Length</span><span class="mono" id="lenRO">15 s</span></div>
@@ -259,12 +272,12 @@ canvas.lane{width:100%;height:74px;display:block;border-radius:8px;background:#0
       </div>
       <p class="hint" id="orderHint"></p>
     </div>
-    <div class="field" title="Follows the sub-bass in your beat. Heavier 808s rattle the shot harder.">
-      <div class="row between"><label class="label" for="shakeIn">Bass shake</label><span class="mono" id="shakeRO">70%</span></div>
-      <input type="range" id="shakeIn" min="0" max="100" step="1">
-      <div class="toggles">
-        <label class="chk"><input type="checkbox" id="fxJello"><span class="box"></span><span class="t">Wobble</span></label>
-        <label class="chk"><input type="checkbox" id="fxKick"><span class="box"></span><span class="t">Kick pulse</span></label>
+    <div class="field"><span class="label">Effects <span style="text-transform:none;letter-spacing:0">· 0 is off</span></span>
+      <div class="fxgrid">
+        <div class="fx" title="Follows the sub-bass in your beat. Heavier 808s rattle the shot harder."><div class="row between"><label for="fxShake">Bass shake</label><span class="mono" id="fxShakeRO"></span></div><input type="range" id="fxShake" min="0" max="100" step="1"></div>
+        <div class="fx" title="Rolling-shutter wobble on bass hits (needs some bass shake)."><div class="row between"><label for="fxWobble">Wobble</label><span class="mono" id="fxWobbleRO"></span></div><input type="range" id="fxWobble" min="0" max="100" step="1"></div>
+        <div class="fx" title="A quick zoom bump on every detected kick."><div class="row between"><label for="fxKick">Kick pulse</label><span class="mono" id="fxKickRO"></span></div><input type="range" id="fxKick" min="0" max="100" step="1"></div>
+        <div class="fx" title="A white flash on each cut, strongest at the top of the bar."><div class="row between"><label for="fxFlash">Flash</label><span class="mono" id="fxFlashRO"></span></div><input type="range" id="fxFlash" min="0" max="100" step="1"></div>
       </div>
     </div>
     <div class="sep"></div>
@@ -419,7 +432,7 @@ const S={
   bpm:140, downbeat:0, nudge:0,
   startBar:0, bars:8,
   len:15, pattern:"2", order:"seq", seed:11, stagger:0, holds:[],
-  fx:{kick:false, shake:70, jello:true},
+  fx:{shake:70, wobble:50, kick:0, flash:0}, trans:{type:"cut", len:0.25},
   aspect:"9:16", res:1080, fps:60, mode:"frames", mirror:false,
   text:{title:"", credit:"", extra:"", bpm:false, on:false, x:0.07, y:0.85, align:"left", font:"grotesk", size:1, color:"#ffffff", tag:"pill"}
 };
@@ -565,7 +578,12 @@ function buildPlan(){
     let slot=[0,1].find(e=>Math.abs(epos[c][e]-want)<0.02);
     if(slot===undefined) slot=[0,1].filter(e=>!busy(e)).sort((a,b)=>elast[c][a]-elast[c][b])[0];
     epos[c][slot]=want+sd; elast[c][slot]=i;
-    segs.push({t,end,d,clip:c,src:want,slot,down}); prev=c;
+    // transition into this shot: the last shot keeps playing underneath for trans seconds
+    let trans=0;
+    if(S.trans.type!=="cut"&&last&&!(last.clip===c&&last.slot===slot)){
+      trans=Math.min(S.trans.len*bd, d*0.85); const lc=S.clips[last.clip], lsp=lc.speed||1;
+      epos[last.clip][last.slot]+=trans*lsp; if(last.clip!==c&&S.order!=="chaos") cur[last.clip]+=trans*lsp;}
+    segs.push({t,end,d,clip:c,src:want,slot,down,trans}); prev=c;
   }
   const kicks=(S.an?S.an.kicks:[]).map(k=>k-rs).filter(k=>k>=-0.01&&k<dur);
   return {segs,dur,rs,bd,kicks};
@@ -585,6 +603,7 @@ function bassAt(t){ // sub-bass energy at time t in the section, gated so soft l
   return Math.pow(Math.max(0,(x-0.32)/0.68),1.4);}
 function drawCover(ctx,v,W,H){const vw=v.videoWidth,vh=v.videoHeight; if(!vw||v.readyState<2) return false; const r=Math.max(W/vw,H/vh), dw=vw*r, dh=vh*r; ctx.drawImage(v,(W-dw)/2,(H-dh)/2,dw,dh); return true;}
 let vigC=null; // the bass-shake vignette, built once per size
+const blurC=document.createElement("canvas"), blurX=blurC.getContext("2d"); // scratch canvas for the soft blur
 function drawFrame(t){
   const W=out.width,H=out.height,ctx=octx;
   if(!plan||!plan.segs.length){ctx.fillStyle="#0b0b0c";ctx.fillRect(0,0,W,H);ctx.fillStyle="#5c5c64";ctx.font=`600 ${Math.round(W*0.045)}px ${tok("--body")}`;ctx.textAlign="center";ctx.fillText("",W/2,H/2);ctx.textAlign="left";return;}
@@ -592,12 +611,34 @@ function drawFrame(t){
   const k=segAt(Math.max(0,t)), s=plan.segs[k], clip=S.clips[s.clip], age=Math.max(0,t-s.t);
   const amt=S.fx.shake/100, b=bassAt(t)*amt;
   let sc=1+(amt>0?0.1*amt:0);  // headroom so a shaking frame never shows its edges
-  if(S.fx.kick){let lk=-1; for(const x of plan.kicks){if(x<=t) lk=x; else break;} if(lk>=0){const a=t-lk; sc+=0.06*Math.exp(-a/0.08);}}
+  if(S.fx.kick>0){let lk=-1; for(const x of plan.kicks){if(x<=t) lk=x; else break;} if(lk>=0){const a=t-lk; sc+=0.12*(S.fx.kick/100)*Math.exp(-a/0.08);}}
   sc+=0.02*b;
-  if(clip.mirror) bctx.setTransform(-sc,0,0,sc,W/2*(1+sc),H/2*(1-sc)); else bctx.setTransform(sc,0,0,sc,W/2*(1-sc),H/2*(1-sc));
-  const br=clip.bright||1; if(br!==1) bctx.filter=`brightness(${br})`;
-  if(clip.kind==="demo"){const dt=s.src+age*(clip.speed||1); clip.draw(bctx,W,H,clip.rev?clip.in+clip.out-dt:dt);} else drawCover(bctx,clip.els[s.slot],W,H);
-  if(br!==1) bctx.filter="none";
+  // transition from the last shot (the new one landed on the beat at s.t)
+  const tr=S.trans.type, ps=k>0?plan.segs[k-1]:null, inT=tr!=="cut"&&s.trans>0&&ps&&age<s.trans;
+  const p=inT?age/s.trans:1, e=1-Math.pow(1-p,3), io=p<0.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
+  const shot=(seg,{z=1,dx=0,dy=0,alpha=1,blur=0}={})=>{const c=S.clips[seg.clip]; if(!c) return; const z2=sc*z, f=c.mirror?-1:1;
+    const br=c.bright||1, v=c.els&&c.els[seg.slot];
+    if(blur>0.6&&v){ // soft blur, cheaply: draw the clip small, then scale it back up (same in preview and export)
+      const q=Math.max(0.05,Math.min(1,1.6/blur)), tw=Math.max(2,Math.ceil(W*q)), th=Math.max(2,Math.ceil(H*q));
+      if(blurC.width!==tw||blurC.height!==th){blurC.width=tw; blurC.height=th;}
+      blurX.setTransform(1,0,0,1,0,0); blurX.clearRect(0,0,tw,th); blurX.imageSmoothingEnabled=true; blurX.imageSmoothingQuality="medium";
+      blurX.setTransform(q*z2*f,0,0,q*z2,q*(W/2*(1-z2*f)+dx),q*(H/2*(1-z2)+dy)); if(br!==1) blurX.filter=`brightness(${br})`;
+      drawCover(blurX,v,W,H); blurX.filter="none";
+      bctx.save(); bctx.globalAlpha=alpha; bctx.setTransform(1,0,0,1,0,0); bctx.imageSmoothingQuality="high"; bctx.drawImage(blurC,0,0,tw,th,0,0,W,H); bctx.restore(); return;}
+    bctx.save(); bctx.globalAlpha=alpha; bctx.setTransform(z2*f,0,0,z2,W/2*(1-z2*f)+dx,H/2*(1-z2)+dy);
+    if(br!==1) bctx.filter=`brightness(${br})`;
+    if(c.kind==="demo"){const dt=seg.src+Math.max(0,t-seg.t)*(c.speed||1); c.draw(bctx,W,H,dt);} else drawCover(bctx,v,W,H);
+    bctx.restore();};
+  const m0=Math.min(W,H);
+  if(!inT) shot(s);
+  else if(tr==="fade"){shot(ps); shot(s,{alpha:e});}
+  else if(tr==="blur"){shot(ps,{blur:m0*0.02*e}); shot(s,{alpha:e,blur:m0*0.02*(1-e)});}
+  else if(tr==="white"||tr==="black"){shot(s); bctx.fillStyle=tr==="white"?`rgba(255,255,255,${1-e})`:`rgba(0,0,0,${1-e})`; bctx.fillRect(0,0,W,H);}
+  else if(tr==="zoom"){shot(ps,{alpha:1}); shot(s,{z:1+0.22*(1-e),alpha:Math.min(1,p*4)});}
+  else if(tr==="slide"){shot(ps,{dx:-W*e}); shot(s,{dx:W*(1-e)});}
+  else if(tr==="up"){shot(ps,{dy:-H*e}); shot(s,{dy:H*(1-e)});}
+  else if(tr==="whip"){const bl=m0*0.035*Math.sin(Math.PI*p); shot(ps,{dx:-W*io,blur:bl}); shot(s,{dx:W*(1-io),blur:bl});}
+  else shot(s);
   bctx.setTransform(1,0,0,1,0,0);
   // bass rattle: wandering high-frequency shake, a touch of roll, rolling-shutter wobble, smear
   const m=Math.min(W,H);
@@ -605,8 +646,8 @@ function drawFrame(t){
   const dy=vnoise(t*31,2)*m*0.03*b+vnoise(t*6,5)*m*0.008*b;
   const rot=vnoise(t*19,3)*0.012*b;
   cctx.save(); cctx.translate(W/2+dx,H/2+dy); cctx.rotate(rot); cctx.translate(-W/2,-H/2);
-  if(S.fx.jello&&b>0.04){
-    const strips=rendering?40:24, sh=H/strips, ph=t*52, A=m*0.014*b;
+  if(S.fx.wobble>0&&b>0.04){
+    const strips=rendering?40:24, sh=H/strips, ph=t*52, A=m*0.028*(S.fx.wobble/100)*b;
     for(let i=0;i<strips;i++){const y=i*sh, off=Math.sin(i/strips*Math.PI*3.2+ph)*A+vnoise(t*40+i*0.15,6)*A*0.4;
       cctx.drawImage(bufC,0,y,W,sh+1,off,y,W,sh+1);}
   } else cctx.drawImage(bufC,0,0);
@@ -616,6 +657,7 @@ function drawFrame(t){
     ctx.fillStyle=`rgba(255,240,220,${Math.min(0.07,b*0.06)})`; ctx.fillRect(0,0,W,H);
     if(!vigC||vigC.w!==W||vigC.h!==H){const vg=ctx.createRadialGradient(W/2,H/2,m*0.35,W/2,H/2,Math.max(W,H)*0.75); vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(0,0,0,1)"); vigC={w:W,h:H,g:vg};}
     ctx.globalAlpha=Math.min(0.45,b*0.35); ctx.fillStyle=vigC.g; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;}
+  if(S.fx.flash>0){const fa=(s.down?1:0.6)*0.8*(S.fx.flash/100)*Math.exp(-age/0.085); if(fa>0.01){ctx.fillStyle=`rgba(255,255,255,${fa})`; ctx.fillRect(0,0,W,H);}}
 }
 let textBox=null;
 function fontStr(fs,key){const f=FONTS[key||S.text.font]; return `${f[0]} ${Math.round(fs)}px ${f[1]}`;}
@@ -906,8 +948,30 @@ function placeGrab(){const g=$("#textGrab"), b=textBox; if(!b||(playing&&playing
   const sr=g.parentElement.getBoundingClientRect(), r=out.getBoundingClientRect(), k=r.width/out.width, pad=8;
   g.hidden=false; g.style.left=(r.left-sr.left+b.x*k-pad)+"px"; g.style.top=(r.top-sr.top+b.y*k-pad)+"px"; g.style.width=(b.w*k+pad*2)+"px"; g.style.height=(b.h*k+pad*2)+"px";}
 $("#reshuffleBtn").onclick=()=>{stopPlay(); S.seed=(Math.random()*1e9)|0; if(!RAND_ORDERS.includes(S.order)&&S.stagger===0&&!/^r(beat|8|bar)$/.test(S.pattern)){S.order="rand"; syncOrder();} refresh();};
-[["#fxKick","kick"],["#fxJello","jello"]].forEach(([id,k])=>{const el=$(id); el.checked=S.fx[k]; el.onchange=()=>{S.fx[k]=el.checked; if(!playing) renderStill();};});
-{const r=$("#shakeIn"); r.value=S.fx.shake; r.oninput=()=>{S.fx.shake=+r.value; $("#shakeRO").textContent=r.value+"%"; if(!playing){renderStill(); drawLane();}};}
+/* effect sliders: 0 is off */
+[["#fxShake","shake"],["#fxWobble","wobble"],["#fxKick","kick"],["#fxFlash","flash"]].forEach(([id,k])=>{const r=$(id), ro=$(id+"RO");
+  const show=()=>{ro.textContent=S.fx[k]?S.fx[k]+"%":"off";}; r.value=S.fx[k]; show();
+  r.oninput=()=>{S.fx[k]=+r.value; show(); if(!playing){renderStill(); if(k==="shake") drawLane();}};});
+/* transitions: the new clip always lands on the beat; the transition plays out after it */
+const TRANS=[
+  ["cut","Hard cut","Straight cut on the beat. No transition."],
+  ["fade","Crossfade","The new clip lands on the beat and the last one melts away."],
+  ["blur","Blur dissolve","Crossfade through a soft blur. Dreamy."],
+  ["white","White dip","Blinks white on the beat, then the new clip fades up out of it."],
+  ["black","Black dip","Blinks black on the beat, then the new clip fades up out of it."],
+  ["zoom","Zoom in","The new clip punches in from a zoom and settles. Hits hard on kicks."],
+  ["slide","Swipe left","The new clip slides in from the right and pushes the last one out."],
+  ["up","Swipe up","Slides up like scrolling to the next video."],
+  ["whip","Whip pan","A fast blurred swipe, like whipping the camera to the next shot."]];
+const TR_IDS=TRANS.map(x=>x[0]);
+{const sel=$("#trSel"); TRANS.forEach(([id,label])=>{const o=document.createElement("option"); o.value=id; o.textContent=label; sel.appendChild(o);});
+  const sync=()=>{sel.value=S.trans.type; $("#trHint").textContent=TRANS.find(x=>x[0]===S.trans.type)[2]; $("#trLenSeg").style.display=S.trans.type==="cut"?"none":"";};
+  const set=id=>{stopPlay(); S.trans.type=id; sync(); refresh();};
+  sel.onchange=()=>set(sel.value);
+  const st=d=>{const i=TR_IDS.indexOf(S.trans.type); set(TR_IDS[(i+d+TR_IDS.length)%TR_IDS.length]);};
+  $("#trPrev").onclick=()=>st(-1); $("#trNext").onclick=()=>st(1);
+  bindSeg("#trLenSeg",()=>String(S.trans.len),v=>{S.trans.len=+v;});
+  sync();}
 $("#bpmIn").onchange=e=>{const v=parseFloat(e.target.value); if(v>=40&&v<=250){stopPlay(); S.bpm=Math.round(v*10)/10; clampRegion(); refresh();} else e.target.value=S.bpm;};
 $("#hookBtn").onclick=()=>{stopPlay(); pickHook(); refresh();};
 $("#videoIn").onchange=e=>{addVideos([...e.target.files]); e.target.value="";};
@@ -1023,7 +1087,7 @@ const laneEnd=()=>{if(!laneDrag) return; const L=laneDrag; laneDrag=null;
   refresh();};
 lane.addEventListener("pointerup",laneEnd); lane.addEventListener("pointercancel",()=>{laneDrag=null; drawLane();});
 $("#clearHolds").onclick=()=>{stopPlay(); S.holds=[]; refresh();};
-{const r=$("#staggerIn"); r.value=S.stagger; r.oninput=()=>{S.stagger=+r.value; $("#staggerRO").textContent=r.value+"%";}; r.onchange=()=>{stopPlay(); refresh();};}
+if(0){const r=$("#staggerIn"); r.value=S.stagger; r.oninput=()=>{S.stagger=+r.value; $("#staggerRO").textContent=r.value+"%";}; r.onchange=()=>{stopPlay(); refresh();};}
 let draggingOv=false;
 function ovPick(e){const r=ov.getBoundingClientRect(), D=S.an.duration, tt=(e.clientX-r.left)/r.width*D; S.startBar=Math.round((tt-regionDur()/2-barOffset())/barDur()); clampRegion(); drawOverview(); updateRO();}
 ov.addEventListener("pointerdown",e=>{if(!S.an) return; stopPlay(); draggingOv=true; ov.setPointerCapture(e.pointerId); ovPick(e);});
@@ -1064,6 +1128,7 @@ const elOf=s=>{if(!s) return null; const c=S.clips[s.clip]; return c&&c.kind==="
 const sameEl=(a,b)=>!!a&&!!b&&a.clip===b.clip&&a.slot===b.slot;
 function prepNext(k){
   const s=plan&&plan.segs[k]; const v=elOf(s); if(!v||!playing) return;
+  if(playing.fade&&playing.fade.el===v) return; // still rolling under a transition; lined up once it ends
   for(let j=Math.max(0,k-2);j<k;j++) if(sameEl(plan.segs[j],s)&&j>=playing.cur) return; // that element is still busy with an earlier shot
   if(playing.cur>=0&&sameEl(plan.segs[playing.cur],s)) return; // it's playing the current shot and just carries on
   const c=S.clips[s.clip], sp=c.speed||1; v.playbackRate=sp;
@@ -1117,11 +1182,15 @@ function tick(){
   if(t>=plan.dur){endPlay(true); return;}
   const k=t<0?0:segAt(t);
   if(t>=0&&k!==P.cur){
-    const prev=plan.segs[P.cur]; if(prev){const c=S.clips[prev.clip]; if(c.kind==="video"&&prev.slot!==undefined){const pv=c.els[prev.slot], nx=plan.segs[k]; if(!(nx&&nx.clip===prev.clip&&nx.slot===prev.slot)) pv.pause();}}
+    const nx=plan.segs[k], nv=elOf(nx);
+    if(P.fade&&P.fade.el!==nv){P.fade.el.pause(); P.fade=null;}
+    const prev=plan.segs[P.cur]; if(prev){const pv=elOf(prev); if(pv&&pv!==nv){
+      if(nx.trans>0&&k===P.cur+1) P.fade={el:pv,until:nx.t+nx.trans}; else pv.pause();}} // the last clip keeps rolling under the transition
     P.cur=k; const s=plan.segs[k], c=S.clips[s.clip];
     if(c.kind==="video"){const v=c.els[s.slot], sp=c.speed||1, want=s.src+(t-s.t)*sp; v.playbackRate=sp; if(Math.abs(v.currentTime-want)>0.3) v.currentTime=want; if(v.paused) v.play().catch(()=>{});}
     P.pre=-1; prepNext(k+1); prepNext(k+2);
   }
+  if(P.fade&&t>=P.fade.until){const el=P.fade.el; P.fade=null; if(el!==elOf(plan.segs[P.cur])) el.pause(); prepNext(P.cur+1); prepNext(P.cur+2);}
   // pre-roll: the next shot was already lined up a moment before its in-point (prepNext); start it rolling PRE seconds early
   const nk=P.cur+1, ns=plan.segs[nk];
   if(t>=0&&ns&&P.pre!==nk&&ns.t-t<=PRE){P.pre=nk; const nc=S.clips[ns.clip];
@@ -1232,6 +1301,12 @@ async function renderExport(){
       if(c.kind!=="video"){while(i<endI&&!stop()) await emit(); continue;}
       const v=c.els[s.slot]; v.pause();
       const srcAt=j=>s.src+(j*fi-s.t)*sp;
+      const ps=k>0?plan.segs[k-1]:null, pv=ps&&s.trans>0?elOf(ps):null;
+      if(pv&&pv!==v){ // transition frames: line up both clips for each frame
+        const pc=S.clips[ps.clip], psp=pc.speed||1, pAt=j=>Math.min(pc.out-0.01,ps.src+(j*fi-ps.t)*psp), tEnd=Math.min(endI,Math.ceil((s.t+s.trans)*fps-1e-6));
+        while(i<tEnd&&!stop()){await seekTo(v,srcAt(i)); await seekTo(pv,pAt(i)); await emit();}
+        pv.pause();
+        if(i>=endI) continue;}
       await seekTo(v,srcAt(i));
       if(v.requestVideoFrameCallback&&!R.seekMode) await follow(v,srcAt,endI);
       else while(i<endI&&!stop()){await seekTo(v,srcAt(i)); await emit();}
